@@ -1,0 +1,159 @@
+.constellation-container {
+    width: 100%;
+    height: 100%;
+    background-color: var(--background-color);
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .constellation-header {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    padding: var(--spacing-md);
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 10;
+    text-align: center;
+  }
+  
+  .constellation-header h1 {
+    font-size: 1.8rem;
+    margin-bottom: var(--spacing-xs);
+    color: var(--text-color);
+  }
+  
+  .constellation-header p {
+    font-size: 1rem;
+    color: var(--text-secondary);
+  }
+  
+  .constellation-controls {
+    position: absolute;
+    bottom: var(--spacing-md);
+    left: var(--spacing-md);
+    display: flex;
+    gap: var(--spacing-sm);
+    z-index: 10;
+  }
+  
+  .constellation-controls button {
+    background: none;
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color var(--transition-speed) var(--transition-function);
+  }
+  
+  .constellation-controls button:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+  
+  /* Node interaction styles */
+  .node-group {
+    cursor: pointer;
+    transition: transform 0.3s ease;
+  }
+  
+  .node-group:hover {
+    transform: scale(1.2);
+  }
+  
+  .node-group:hover .node {
+    stroke: white;
+    stroke-width: 2;
+  }
+  
+  /* Character-specific node styles */
+  .node[data-character="Archaeologist"] {
+    fill: var(--archaeologist-primary);
+  }
+  
+  .node[data-character="Algorithm"] {
+    fill: var(--algorithm-primary);
+  }
+  
+  .node[data-character="LastHuman"] {
+    fill: var(--lasthuman-primary);
+  }
+  
+  /* Node state styles */
+  .node-group.unvisited {
+    opacity: 0.5;
+  }
+  
+  .node-group.visited {
+    opacity: 1;
+  }
+  
+  .node-group.revisited .node {
+    filter: drop-shadow(0 0 5px var(--node-accent));
+  }
+  
+  .node-group.complex .node {
+    filter: drop-shadow(0 0 10px var(--node-accent));
+  }
+  
+  .node-group.fragmented .node {
+    filter: drop-shadow(0 0 15px var(--node-accent));
+    animation: node-pulse 3s infinite;
+  }
+  
+  @keyframes node-pulse {
+    0% { filter: drop-shadow(0 0 10px var(--node-accent)); }
+    50% { filter: drop-shadow(0 0 20px var(--node-accent)); }
+    100% { filter: drop-shadow(0 0 10px var(--node-accent)); }
+  }
+  
+  /* Temporal position indicators */
+  .temporal-indicator {
+    position: absolute;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  
+  .temporal-indicator.past {
+    top: 20%;
+    left: var(--spacing-md);
+  }
+  
+  .temporal-indicator.present {
+    top: 50%;
+    left: var(--spacing-md);
+    transform: translateY(-50%);
+  }
+  
+  .temporal-indicator.future {
+    bottom: 20%;
+    left: var(--spacing-md);
+  }
+  
+  /* Loading state for the constellation */
+  .constellation-loading {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: var(--background-color);
+    z-index: 20;
+  }
+  
+  .constellation-loading span {
+    font-family: var(--font-monospace);
+    color: var(--text-color);
+    animation: loading-pulse 1.5s infinite;
+  }
+  
+  @keyframes loading-pulse {
+    0% { opacity: 0.5; }
+    50% { opacity: 1; }
+    100% { opacity: 0.5; }
+  }
