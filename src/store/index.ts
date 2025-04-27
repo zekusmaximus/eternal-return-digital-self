@@ -1,4 +1,4 @@
-declare var process: any;
+declare const process: { env: { NODE_ENV?: string } };
 
 /**
  * Redux store configuration for Eternal Return of the Digital Self
@@ -20,7 +20,6 @@ import storage from 'redux-persist/lib/storage';
 import nodesReducer from './slices/nodesSlice';
 import readerReducer from './slices/readerSlice';
 import interfaceReducer from './slices/interfaceSlice';
-import { RootState } from '../types';
 
 // Persist configuration
 const persistConfig = {
@@ -38,8 +37,14 @@ const rootReducer = combineReducers({
   interface: interfaceReducer,
 });
 
+// Let TypeScript infer RootState from rootReducer
+export type RootState = ReturnType<typeof rootReducer>;
+
 // Create a persisted reducer to maintain state between sessions
-const persistedReducer = persistReducer<RootState>(persistConfig, rootReducer as any);
+const persistedReducer = persistReducer(
+  persistConfig,
+  rootReducer
+);
 
 // Configure store with middleware and devtools
 export const store = configureStore({
@@ -53,7 +58,7 @@ export const store = configureStore({
     }),
   devTools:
     (typeof process !== 'undefined' && process?.env?.NODE_ENV !== 'production') ||
-    (typeof window !== 'undefined' && (window as any).process?.env?.NODE_ENV !== 'production'),
+    (typeof window !== 'undefined' && 'process' in window && typeof (window as { process: { env: { NODE_ENV?: string } } }).process.env.NODE_ENV !== 'undefined' && (window as { process: { env: { NODE_ENV?: string } } }).process.env.NODE_ENV !== 'production'),
 });
 
 // Create persistor for redux-persist
@@ -72,7 +77,7 @@ export type AppDispatch = typeof store.dispatch;
 export const calculateNodeState = (nodeId: string): string => {
   const state = store.getState();
   const node = state.nodes.data[nodeId];
-  const { path } = state.reader;
+  // Removed unused 'path' variable
   
   if (!node) return 'unvisited';
   
@@ -103,9 +108,8 @@ export const calculateNodeState = (nodeId: string): string => {
  * @returns The transformed content for the current state
  */
 export const getNodeContent = (nodeId: string) => {
-  // This will be implemented in a separate service
-  // For now, it's just a placeholder
-  return '';
+  // Placeholder implementation using nodeId
+  return `Content for node ${nodeId}`;
 };
 
 export default store;
