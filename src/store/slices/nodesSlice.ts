@@ -3,7 +3,7 @@
  * Handles node initialization, visits, and transformations
  */
 
-import { createSlice, PayloadAction, createAsyncThunk } from '@reduxjs/toolkit';
+import { createSlice, PayloadAction, createAsyncThunk, createSelector } from '@reduxjs/toolkit';
 import { Node, NodeState, NodeVisualState, TransformationRule } from '../../types';
 
 // Interface for the nodes slice of the Redux store
@@ -44,7 +44,6 @@ const initialNodeData: Node[] = [
   // Add other nodes here...
 ];
 
-// Async thunk for initializing nodes
 export const initializeNodes = createAsyncThunk(
   'nodes/initialize',
   async (_, { rejectWithValue }) => {
@@ -52,13 +51,12 @@ export const initializeNodes = createAsyncThunk(
       // In production, this would fetch node data from an API or files
       // For now, we're using the hardcoded data above
       return initialNodeData;
-    } catch (error) {
+    } catch {
       return rejectWithValue('Failed to initialize nodes');
     }
   }
 );
 
-// Async thunk for loading node content
 export const loadNodeContent = createAsyncThunk(
   'nodes/loadContent',
   async (nodeId: string, { rejectWithValue }) => {
@@ -69,12 +67,11 @@ export const loadNodeContent = createAsyncThunk(
         nodeId,
         content: 'Placeholder content for ' + nodeId,
       };
-    } catch (error) {
+    } catch {
       return rejectWithValue(`Failed to load content for node ${nodeId}`);
     }
   }
 );
-
 // Create the nodes slice
 const nodesSlice = createSlice({
   name: 'nodes',
@@ -201,19 +198,23 @@ export const selectNodesByTemporalValue = (state: { nodes: NodesState }, tempora
 export const selectNodesByVisualState = (state: { nodes: NodesState }, visualState: NodeVisualState) =>
   Object.values(state.nodes.data).filter(node => node.currentState === visualState);
 
-export const selectAllConnections = (state: { nodes: NodesState }) => {
-  const connections: Array<{ source: string, target: string }> = [];
-  
-  Object.values(state.nodes.data).forEach(node => {
-    node.revealedConnections.forEach(targetId => {
-      connections.push({
-        source: node.id,
-        target: targetId
+// Memoized selector for all connections
+export const selectAllConnections = createSelector(
+  (state: { nodes: NodesState }) => state.nodes.data,
+  (nodes) => {
+    const connections: Array<{ source: string, target: string }> = [];
+    
+    Object.values(nodes).forEach(node => {
+      node.revealedConnections.forEach(targetId => {
+        connections.push({
+          source: node.id,
+          target: targetId
+        });
       });
     });
-  });
-  
-  return connections;
-};
+    
+    return connections;
+  }
+);
 
 export default nodesSlice.reducer;

@@ -34,12 +34,12 @@ export const useNodeState = (nodeId?: string) => {
   
   // Select node data
   const node = useSelector((state: RootState) => 
-    targetNodeId ? selectNodeById(state as any, targetNodeId) : null
+    targetNodeId ? selectNodeById(state as RootState, targetNodeId) : null
   );
   
   // Get revisit count
   const revisitCount = useSelector((state: RootState) => 
-    targetNodeId ? selectNodeRevisitCount(state as any, targetNodeId) : 0
+    targetNodeId ? selectNodeRevisitCount(state, targetNodeId) : 0
   );
   
   // Navigate to a node
