@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import React, { useRef } from 'react';
 import { useSelector } from 'react-redux';
 import { RootState } from '../../store/types';
 import { selectAllConnections } from '../../store/slices/nodesSlice';
@@ -30,7 +30,6 @@ const MiniConstellation: React.FC<MiniConstellationProps> = ({
   const width = 200;
   const height = 200;
   const centerX = width / 2;
-  const centerY = height / 2;
   
   // Calculate node positions based on temporal value and character
   // This is a simplified 2D positioning

@@ -18,7 +18,7 @@ export const contentMapping = {
   };
   
   // Define a type for the keys of contentMapping
-  type ContentMappingKeys = keyof typeof contentMapping;
+  export type ContentMappingKeys = keyof typeof contentMapping;
 
   // Helper function to get content path from node ID
   export function getContentPath(nodeId: ContentMappingKeys): string {

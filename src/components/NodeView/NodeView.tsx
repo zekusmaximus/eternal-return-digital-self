@@ -1,3 +1,5 @@
+// src/components/NodeView/NodeView.tsx
+
 import { useEffect, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectCurrentNodeId } from '../../store/slices/readerSlice';
@@ -5,6 +7,7 @@ import { setViewMode } from '../../store/slices/interfaceSlice';
 import useNodeState from '../../hooks/useNodeState';
 import MiniConstellation from './MiniConstellation';
 import MarginaliaSidebar from './MarginaliaSidebar';
+import { getContentPath, ContentMappingKeys } from '../../config/contentMapping'; // Import ContentMappingKeys here
 import './NodeView.css';
 
 // Type for content loading state
@@ -75,8 +78,14 @@ const NodeView = () => {
       setContentState(prev => ({ ...prev, loading: true }));
       
       try {
-        // Load content from files based on node ID
-        const response = await fetch(`/src/content/${node.id}.md`);
+        // Use getContentPath to get the content path based on node ID
+        const contentPath = getContentPath(node.id as ContentMappingKeys);
+        
+        if (!contentPath) {
+          throw new Error(`No content path found for node ID: ${node.id}`);
+        }
+        
+        const response = await fetch(contentPath);
         
         if (!response.ok) {
           throw new Error(`Failed to load content for ${node.id}: ${response.statusText}`);
