@@ -113,16 +113,26 @@ const nodesSlice = createSlice({
     
     // Apply a transformation to a node's content
     applyTransformation: (state, action: PayloadAction<{ 
-      nodeId: string, 
-      transformation: TransformationRule 
-    }>) => {
-      const { nodeId, transformation } = action.payload;
-      const node = state.data[nodeId];
-      
-      if (node) {
-        node.transformations.push(transformation);
-      }
-    },
+  nodeId: string, 
+  transformation: TransformationRule 
+}>) => {
+  const { nodeId, transformation } = action.payload;
+  const node = state.data[nodeId];
+
+  if (node) {
+    // Change this line:
+    // node.transformations.push(transformation);
+
+    // Only push if not present
+    // (You may want to adjust this equality check to your needs)
+    const alreadyExists = node.transformations.some(
+      t => JSON.stringify(t.condition) === JSON.stringify(transformation.condition)
+    );
+    if (!alreadyExists) {
+      node.transformations.push(transformation);
+    }
+  }
+},
     
     // Reset all nodes to initial state (for testing)
     resetNodes: (state) => {
