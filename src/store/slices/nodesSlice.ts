@@ -208,6 +208,12 @@ export const selectNodesByTemporalValue = (state: { nodes: NodesState }, tempora
 export const selectNodesByVisualState = (state: { nodes: NodesState }, visualState: NodeVisualState) =>
   Object.values(state.nodes.data).filter(node => node.currentState === visualState);
 
+// Memoized selector for all nodes
+export const selectAllNodes = createSelector(
+  (state: { nodes: NodesState }) => state.nodes.data,
+  (nodesData) => Object.values(nodesData)
+);
+
 // Memoized selector for all connections
 export const selectAllConnections = createSelector(
   (state: { nodes: NodesState }) => state.nodes.data,

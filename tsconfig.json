@@ -7,5 +7,7 @@
   "compilerOptions": {
     // Other compiler options
     "types": ["node"]
-  }
+  },
+  "include": ["src"],
+  "exclude": ["node_modules"]
 }

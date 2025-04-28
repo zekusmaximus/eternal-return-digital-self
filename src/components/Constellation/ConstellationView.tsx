@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { RootState } from '../../types'; // Import from types file instead
-import { selectAllConnections } from '../../store/slices/nodesSlice';
+import { selectAllNodes, selectAllConnections } from '../../store/slices/nodesSlice';
 import { 
   setConstellationZoom
 } from '../../store/slices/interfaceSlice';
@@ -19,9 +18,7 @@ const ConstellationView = () => {
   const { navigateTo } = useNodeState();
   
   // Get all nodes from Redux store
-  const nodes = useSelector((state: RootState) => 
-    Object.values(state.nodes.data) as Array<{ id: string; temporalValue: number; character: string; currentState: string; }>
-  );
+  const nodes = useSelector(selectAllNodes);
   
   // Get all connections
   const connections = useSelector(selectAllConnections);
