@@ -17,9 +17,9 @@ import {
   REGISTER
 } from 'redux-persist';
 import storage from 'redux-persist/lib/storage';
-import nodesReducer from './slices/nodesSlice';
-import readerReducer from './slices/readerSlice';
-import interfaceReducer from './slices/interfaceSlice';
+import nodesReducer, { NodesState } from './slices/nodesSlice'; // Import NodesState type
+import readerReducer, { ReaderState } from './slices/readerSlice'; // Import ReaderState type
+import interfaceReducer, { InterfaceState } from './slices/interfaceSlice';
 
 // Persist configuration
 const persistConfig = {

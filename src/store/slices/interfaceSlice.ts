@@ -4,32 +4,19 @@
  */
 
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-
+import { RootState } from '../types';
 // Possible view modes for the interface
 type ViewMode = 'constellation' | 'reading';
 
-// Interface for the UI slice of the Redux store
-interface InterfaceState {
+export interface InterfaceState { // Add 'export' here
   viewMode: ViewMode;
   showMiniConstellation: boolean;
   showMetaInterface: boolean;
-  showStrangeAttractors: boolean;
-  constellationZoom: number;
-  constellationRotation: {
-    x: number;
-    y: number;
-    z: number;
-  };
-  textSize: 'small' | 'medium' | 'large';
-  highContrast: boolean;
-  animations: 'reduced' | 'full';
-  transitionSpeed: number; // milliseconds
-  helpModalOpen: boolean;
-  aboutModalOpen: boolean;
+  // ... existing code ...
 }
 
 // Initial state for the interface slice
-const initialState: InterfaceState = {
+const initialState = {
   viewMode: 'constellation',
   showMiniConstellation: true,
   showMetaInterface: false,
@@ -145,31 +132,31 @@ export const {
 } = interfaceSlice.actions;
 
 // Export selector functions
-export const selectViewMode = (state: { interface: InterfaceState }) => 
+export const selectViewMode = (state: RootState) =>
   state.interface.viewMode;
 
-export const selectShowMiniConstellation = (state: { interface: InterfaceState }) => 
+export const selectShowMiniConstellation = (state: RootState) =>
   state.interface.showMiniConstellation;
 
-export const selectShowMetaInterface = (state: { interface: InterfaceState }) => 
+export const selectShowMetaInterface = (state: RootState) =>
   state.interface.showMetaInterface;
 
-export const selectShowStrangeAttractors = (state: { interface: InterfaceState }) => 
+export const selectShowStrangeAttractors = (state: RootState) =>
   state.interface.showStrangeAttractors;
 
-export const selectConstellationControls = (state: { interface: InterfaceState }) => ({
+export const selectConstellationControls = (state: RootState) => ({
   zoom: state.interface.constellationZoom,
   rotation: state.interface.constellationRotation
 });
 
-export const selectAccessibilitySettings = (state: { interface: InterfaceState }) => ({
+export const selectAccessibilitySettings = (state: RootState) => ({
   textSize: state.interface.textSize,
   highContrast: state.interface.highContrast,
   animations: state.interface.animations,
   transitionSpeed: state.interface.transitionSpeed
 });
 
-export const selectModalStates = (state: { interface: InterfaceState }) => ({
+export const selectModalStates = (state: RootState) => ({
   helpModalOpen: state.interface.helpModalOpen,
   aboutModalOpen: state.interface.aboutModalOpen
 });

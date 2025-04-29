@@ -4,15 +4,15 @@
  */
 
 import { createSlice, PayloadAction, createAsyncThunk, createSelector } from '@reduxjs/toolkit';
-import { Node, NodeState, NodeVisualState, TransformationRule } from '../../types';
+import { Node, NodeState, NodeVisualState, TransformationRule } from '../types';
 
-// Interface for the nodes slice of the Redux store
-interface NodesState {
+export interface NodesState { // Add 'export' right here
   data: Record<string, NodeState>;
   initialized: boolean;
   loading: boolean;
   error: string | null;
 }
+
 
 // Initial state for the nodes slice
 const initialState: NodesState = {

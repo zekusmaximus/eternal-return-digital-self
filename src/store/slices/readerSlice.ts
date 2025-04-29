@@ -6,8 +6,7 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { ReadingPath, StrangeAttractor, EndpointOrientation } from '../../types';
 
-// Interface for the reader slice of the Redux store
-interface ReaderState {
+export interface ReaderState { // Add 'export' here
   path: ReadingPath;
   currentNodeId: string | null;
   previousNodeId: string | null;
@@ -16,6 +15,7 @@ interface ReaderState {
   sessionStartTime: number;
   totalReadingTime: number;
 }
+
 
 // Initial state for the reader's path
 const initialReadingPath: ReadingPath = {
