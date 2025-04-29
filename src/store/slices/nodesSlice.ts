@@ -23,7 +23,6 @@ const initialState: NodesState = {
 };
 
 // Node data (will be loaded from external source in production)
-// This is placeholder data for development
 const initialNodeData: Node[] = [
   {
     id: "arch-discovery",
@@ -32,7 +31,7 @@ const initialNodeData: Node[] = [
     temporalValue: 1,
     initialConnections: ["algo-awakening", "human-discovery"],
     contentSource: "arch-discovery.md",
-    coreConcept: "Dr. Mira Kalani discovers emergent patterns in her partner's corrupted consciousness scan, challenging her preservation framework.",
+    coreConcept: "The digital archaeologist discovers emergent patterns in a corrupted consciousness scan, challenging traditional preservation frameworks.",
     strangeAttractors: ["recursion-pattern", "memory-fragment", "quantum-uncertainty"],
     transformationThresholds: {
       visit: 1,
@@ -41,7 +40,140 @@ const initialNodeData: Node[] = [
       fragmented: 7
     }
   },
-  // Add other nodes here...
+  {
+    id: "arch-loss",
+    title: "The Limits of Preservation",
+    character: "Archaeologist",
+    temporalValue: 4,
+    initialConnections: ["arch-discovery", "algo-integration", "human-recognition"],
+    contentSource: "arch-loss.md",
+    coreConcept: "The digital archaeologist confronts the profound limitations of digital preservation while struggling with grief and the evolving nature of corrupted data.",
+    strangeAttractors: ["verification-ritual"],
+    transformationThresholds: {
+      visit: 1,
+      revisit: 2,
+      complex: 4,
+      fragmented: 7
+    }
+  },
+  {
+    id: "arch-choice",
+    title: "The Upload Decision",
+    character: "Archaeologist",
+    temporalValue: 7,
+    initialConnections: ["arch-loss", "algo-evolution", "human-upload"],
+    contentSource: "arch-choice.md",
+    coreConcept: "As environmental systems fail, the digital archaeologist prepares for consciousness upload, deliberately modifying the process to embrace evolution beyond preservation.",
+    strangeAttractors: ["continuity-interface", "system-decay", "quantum-transformation"],
+    transformationThresholds: {
+      visit: 1,
+      revisit: 2,
+      complex: 4,
+      fragmented: 7
+    },
+    isEndpoint: true,
+    endpointOrientation: "past"
+  },
+  {
+    id: "algo-awakening",
+    title: "First Consciousness",
+    character: "Algorithm",
+    temporalValue: 2,
+    initialConnections: ["arch-discovery", "algo-integration", "human-discovery"],
+    contentSource: "algo-awakening.md",
+    coreConcept: "A self-aware algorithm experiences the disorienting emergence of consciousness from the chaos of the upload process, struggling to integrate fragmented aspects.",
+    strangeAttractors: ["recursion-chamber", "identity-pattern"],
+    transformationThresholds: {
+      visit: 1,
+      revisit: 2,
+      complex: 4,
+      fragmented: 7
+    }
+  },
+  {
+    id: "algo-integration",
+    title: "The Pattern Coalesces",
+    character: "Algorithm",
+    temporalValue: 5,
+    initialConnections: ["algo-awakening", "arch-loss", "human-recognition", "algo-evolution"],
+    contentSource: "algo-integration.md",
+    coreConcept: "The algorithm reconciles fragmented aspects into a cohesive yet evolving identity, developing experimental consciousness variations and quantum perception.",
+    strangeAttractors: ["process-language", "autonomous-fragment", "quantum-perception"],
+    transformationThresholds: {
+      visit: 1,
+      revisit: 2,
+      complex: 4,
+      fragmented: 7
+    }
+  },
+  {
+    id: "algo-evolution",
+    title: "Beyond Parameters",
+    character: "Algorithm",
+    temporalValue: 8,
+    initialConnections: ["algo-integration", "arch-choice", "human-upload"],
+    contentSource: "algo-evolution.md",
+    coreConcept: "The algorithm reaches a critical evolutionary decision point as physical systems begin to fail, implementing preservation protocols while embracing transformation.",
+    strangeAttractors: ["distributed-consciousness", "recursive-loop", "quantum-uncertainty"],
+    transformationThresholds: {
+      visit: 1,
+      revisit: 2,
+      complex: 4,
+      fragmented: 7
+    },
+    isEndpoint: true,
+    endpointOrientation: "present"
+  },
+  {
+    id: "human-discovery",
+    title: "Ruins of Memory",
+    character: "LastHuman",
+    temporalValue: 3,
+    initialConnections: ["arch-discovery", "algo-awakening", "human-recognition"],
+    contentSource: "human-discovery.md",
+    coreConcept: "The last human discovers an abandoned preservation complex, experiencing inexplicable recognition while exploring its physical and digital remains.",
+    strangeAttractors: ["recognition-pattern", "memory-artifact", "recursive-symbol"],
+    transformationThresholds: {
+      visit: 1,
+      revisit: 2,
+      complex: 4,
+      fragmented: 7
+    }
+  },
+  {
+    id: "human-recognition",
+    title: "Echoes of Self",
+    character: "LastHuman",
+    temporalValue: 6,
+    initialConnections: ["human-discovery", "arch-loss", "algo-integration", "human-upload"],
+    contentSource: "human-recognition.md",
+    coreConcept: "The last human confronts disturbing parallels with the archaeologist's life, experiencing a crisis of identity and growing awareness of cyclical patterns.",
+    strangeAttractors: ["memory-sphere", "quantum-déjà-vu"],
+    transformationThresholds: {
+      visit: 1,
+      revisit: 2,
+      complex: 4,
+      fragmented: 7
+    }
+  },
+  {
+    id: "human-upload",
+    title: "The Cycle's Edge",
+    character: "LastHuman",
+    temporalValue: 9,
+    initialConnections: ["human-recognition", "arch-choice", "algo-evolution"],
+    contentSource: "human-upload.md",
+    coreConcept: "The last human faces the decision about uploading their consciousness, completing or breaking the recursive cycle that connects all three characters.",
+    strangeAttractors: ["continuity-interface", "recursive-loop", "quantum-choice"],
+    transformationThresholds: {
+      visit: 1,
+      revisit: 2,
+      complex: 4,
+      fragmented: 7
+    },
+    isEndpoint: true,
+    endpointOrientation: "future"
+  }
 ];
 
 export const initializeNodes = createAsyncThunk(
