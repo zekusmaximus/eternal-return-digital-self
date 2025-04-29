@@ -38,7 +38,11 @@ const rootReducer = combineReducers({
 });
 
 // Let TypeScript infer RootState from rootReducer
-export type RootState = ReturnType<typeof rootReducer>;
+export type RootState = {
+  nodes: NodesState;
+  reader: ReaderState;
+  interface: InterfaceState;
+};
 
 // Create a persisted reducer to maintain state between sessions
 const persistedReducer = persistReducer(
