@@ -10,8 +10,7 @@
     "outDir": "./dist",
     
     "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "noEmit": true,
+    "noEmit": false,
     "isolatedModules": true,
     "moduleDetection": "force",
 
