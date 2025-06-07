@@ -17,9 +17,10 @@
   }
   
   .node-header {
-    padding: var(--spacing-lg) var(--spacing-lg) var(--spacing-md);
+    padding: calc(var(--spacing-xl) * 2) var(--spacing-lg) var(--spacing-md);
     position: relative;
     z-index: 1;
+    margin-top: var(--spacing-lg);
   }
   
   .node-header h1 {
@@ -57,6 +58,13 @@
     max-width: 800px;
     margin: 0 auto;
     padding-bottom: var(--spacing-xl);
+    color: var(--text-color); /* Ensure text color is set consistently */
+  }
+  
+  /* Override grayscale filter in unvisited state to avoid visual inconsistencies */
+  .content-container.unvisited {
+    filter: none;
+    opacity: 0.9;
   }
   
   .content-container h1 {

@@ -44,6 +44,52 @@ This repository contains the prototype implementation of the "Eternal Return of 
 - 3D visualization of the narrative structure
 - State management for tracking reader journey
 
+## User Onboarding
+
+The project includes a comprehensive onboarding system designed to guide first-time users through the interactive narrative experience. These features enhance user experience by providing contextual guidance and reducing the learning curve for navigating the constellation interface.
+
+### Introduction Overlay
+
+- Serves as an initial welcome screen for first-time visitors
+- Presents the core concept of the narrative experience
+- Features an animated node example demonstrating interaction behavior
+- Includes a clear call-to-action to begin exploration
+- Uses localStorage to track whether users have seen the introduction
+- Automatically displays on first visit only, with option to view again later
+
+### Node Interaction Hints
+
+- Provides contextual tooltips when users hover over constellation nodes
+- Dynamically positions tooltips relative to node coordinates
+- Utilizes custom events (node-hover, node-unhover) for seamless interaction
+- Implements subtle animations for improved visibility
+- Offers immediate guidance on how to interact with narrative nodes
+
+### Help System
+
+- Accessible help icon positioned in the corner of the interface
+- Opens a comprehensive help modal with navigation instructions
+- Explains constellation controls and reading experience
+- Provides option to reset introduction for revisiting the onboarding process
+- Maintains consistent visual design with the overall interface
+
+### Technical Implementation
+
+- Uses localStorage to persist user onboarding state between sessions
+- Implements custom event system to handle node interactions
+- Features CSS animations for visual engagement (pulse, fade effects)
+- Employs React state management for conditional rendering of components
+- Seamlessly integrates with the constellation visualization system
+
+### Future Development
+
+Phase 2 enhancements will include:
+- Contextual tutorials based on user behavior patterns
+- Interactive guided tours for specific narrative paths
+- Customizable help options in user settings
+
+Phase 3 will expand these features as the narrative nodes increase from 9 to 49.
+
 ## Getting Started
 
 ### Prerequisites

@@ -4,7 +4,17 @@
  */
 
 import { createSlice, PayloadAction, createAsyncThunk, createSelector } from '@reduxjs/toolkit';
-import { Node, NodeState, NodeVisualState, TransformationRule, ConstellationNode, NarramorphContent, RootState } from '../../types';
+import {
+  Node,
+  NodeState,
+  NodeVisualState,
+  TransformationRule,
+  ConstellationNode,
+  NarramorphContent,
+  RootState,
+  StrangeAttractor
+} from '../../types';
+import { transformationEngine } from '../../services/TransformationEngine';
 
 export interface NodesState { // Add 'export' right here
   data: Record<string, NodeState>;
@@ -246,7 +256,6 @@ const nodesSlice = createSlice({
         node.lastVisitTimestamp = Date.now();
         
         // Update node state based on visit count
-        // More complex state calculation will be moved to a separate service
         if (node.visitCount === 1) {
           node.currentState = 'visited';
         } else if (node.visitCount >= node.transformationThresholds.fragmented) {
@@ -259,13 +268,14 @@ const nodesSlice = createSlice({
 
         // Update currentContent based on the new visit count
         if (node.content) {
-            const availableCounts = Object.keys(node.content)
-                .map(Number)
-                .sort((a, b) => b - a); // Sort descending
-            const bestMatch = availableCounts.find(count => node.visitCount >= count);
-            if (bestMatch !== undefined) {
-                node.currentContent = node.content[bestMatch];
-            }
+          const availableCounts = Object.keys(node.content)
+            .map(Number)
+            .sort((a, b) => b - a); // Sort descending
+          const bestMatch = availableCounts.find(count => node.visitCount >= count);
+          if (bestMatch !== undefined) {
+            // Store the base content (without transformations)
+            node.currentContent = node.content[bestMatch];
+          }
         }
       }
     },
@@ -281,27 +291,99 @@ const nodesSlice = createSlice({
     },
     
     // Apply a transformation to a node's content
-    applyTransformation: (state, action: PayloadAction<{ 
-  nodeId: string, 
-  transformation: TransformationRule 
-}>) => {
-  const { nodeId, transformation } = action.payload;
-  const node = state.data[nodeId];
+    applyTransformation: (state, action: PayloadAction<{
+      nodeId: string,
+      transformation: TransformationRule
+    }>) => {
+      const { nodeId, transformation } = action.payload;
+      const node = state.data[nodeId];
 
-  if (node) {
-    // Change this line:
-    // node.transformations.push(transformation);
+      if (node) {
+        // Only push if not present
+        const alreadyExists = node.transformations.some(
+          t => JSON.stringify(t.condition) === JSON.stringify(transformation.condition)
+        );
+        if (!alreadyExists) {
+          node.transformations.push(transformation);
+        }
+      }
+    },
 
-    // Only push if not present
-    // (You may want to adjust this equality check to your needs)
-    const alreadyExists = node.transformations.some(
-      t => JSON.stringify(t.condition) === JSON.stringify(transformation.condition)
-    );
-    if (!alreadyExists) {
-      node.transformations.push(transformation);
-    }
-  }
-},
+    // Evaluate and apply transformations based on reader state
+    evaluateTransformations: (state, action: PayloadAction<{
+      nodeId: string,
+      readerState: RootState['reader']
+    }>) => {
+      const { nodeId, readerState } = action.payload;
+      const node = state.data[nodeId];
+
+      if (node && node.content && node.transformations.length > 0) {
+        // Get base content for the current visit count
+        const availableCounts = Object.keys(node.content)
+          .map(Number)
+          .sort((a, b) => b - a); // Sort descending
+        
+        const bestMatch = availableCounts.find(count => node.visitCount >= count);
+        if (bestMatch !== undefined) {
+          const baseContent = node.content[bestMatch];
+          
+          // Create a default attractorEngagement record with all strange attractors
+          const defaultAttractorEngagement: Record<StrangeAttractor, number> = {
+            'recursion-pattern': 0,
+            'memory-fragment': 0,
+            'verification-ritual': 0,
+            'identity-pattern': 0,
+            'recursion-chamber': 0,
+            'process-language': 0,
+            'autonomous-fragment': 0,
+            'quantum-perception': 0,
+            'distributed-consciousness': 0,
+            'recursive-loop': 0,
+            'quantum-uncertainty': 0,
+            'continuity-interface': 0,
+            'system-decay': 0,
+            'quantum-transformation': 0,
+            'memory-artifact': 0,
+            'recursive-symbol': 0,
+            'recognition-pattern': 0,
+            'memory-sphere': 0,
+            'quantum-déjà-vu': 0,
+            'quantum-choice': 0
+          };
+
+          // Create a complete ReaderState object with required properties
+          const enhancedReaderState = {
+            ...readerState,
+            previousNodeId: readerState.path.sequence.length > 1 ?
+              readerState.path.sequence[readerState.path.sequence.length - 2] : null,
+            // Merge existing attractor engagements with default values
+            attractorEngagement: {
+              ...defaultAttractorEngagement,
+              ...readerState.path.attractorsEngaged
+            },
+            sessionStartTime: Date.now() - 1000, // Default to 1 second ago
+            totalReadingTime: Object.values(readerState.path.durations).reduce((sum, duration) => sum + duration, 0)
+          };
+          
+          // Filter transformations that should apply based on conditions
+          const applicableTransformations = node.transformations
+            .filter(rule =>
+              transformationEngine.evaluateCondition(rule.condition, enhancedReaderState, node)
+            )
+            .flatMap(rule => rule.transformations);
+          
+          // Apply transformations to base content
+          if (applicableTransformations.length > 0) {
+            node.currentContent = transformationEngine.applyTransformations(
+              baseContent,
+              applicableTransformations
+            );
+          } else {
+            node.currentContent = baseContent;
+          }
+        }
+      }
+    },
     
     // Reset all nodes to initial state (for testing)
     resetNodes: (state) => {
@@ -376,11 +458,12 @@ const nodesSlice = createSlice({
 });
 
 // Export actions
-export const { 
-  visitNode, 
-  revealConnection, 
+export const {
+  visitNode,
+  revealConnection,
   applyTransformation,
-  resetNodes 
+  evaluateTransformations,
+  resetNodes
 } = nodesSlice.actions;
 
 // Export selector functions

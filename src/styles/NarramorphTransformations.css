@@ -1,0 +1,178 @@
+/**
+ * NarramorphTransformations.css
+ *
+ * Styles for Narramorph content transformations and transitions.
+ * These styles handle the visual effects that occur when content
+ * is transformed based on reader patterns.
+ */
+
+/* Base transformation styles */
+.narramorph-transform {
+  transition: all 0.7s ease-in-out;
+  position: relative;
+}
+
+/* Replacement transformation styles */
+.narramorph-transform-replace {
+  background-color: rgba(64, 156, 255, 0.05);
+  border-left: 2px solid rgba(64, 156, 255, 0.3);
+  padding-left: 8px;
+  margin-left: -10px;
+  display: inline-block;
+}
+
+.narramorph-transform-replace::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(64, 156, 255, 0.5), transparent);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 1.2s ease-out;
+}
+
+.narramorph-replaced::after {
+  transform: scaleX(1);
+}
+
+/* Fragment transformation styles */
+.narramorph-transform-fragment {
+  letter-spacing: 0.05em;
+  transition: letter-spacing 1.5s ease-in-out;
+}
+
+.narramorph-fragmented {
+  letter-spacing: 0.12em;
+  background: linear-gradient(90deg, 
+    rgba(255, 255, 255, 1) 0%, 
+    rgba(245, 245, 245, 1) 50%, 
+    rgba(240, 240, 240, 1) 100%);
+  padding: 0 4px;
+  border-radius: 3px;
+  text-shadow: 0 0 1px rgba(0, 0, 0, 0.1);
+}
+
+/* Expansion transformation styles */
+.narramorph-transform-expand {
+  display: inline-block;
+}
+
+.narramorph-expansion {
+  opacity: 0;
+  max-height: 0;
+  overflow: hidden;
+  color: #667788;
+  font-style: italic;
+  display: inline-block;
+  vertical-align: bottom;
+  transition: opacity 1s ease, max-height 1s ease;
+}
+
+.narramorph-expanded .narramorph-expansion {
+  opacity: 1;
+  max-height: 300px;
+}
+
+/* Emphasis transformation styles */
+.narramorph-transform-emphasize {
+  transition: all 0.7s ease-in-out;
+}
+
+.narramorph-emphasis-italic {
+  font-style: italic;
+}
+
+.narramorph-emphasis-bold {
+  font-weight: bold;
+}
+
+.narramorph-emphasis-color {
+  color: #3a7ca5;
+  background: linear-gradient(180deg, 
+    rgba(58, 124, 165, 0) 0%, 
+    rgba(58, 124, 165, 0.1) 100%);
+  padding: 0 2px;
+}
+
+.narramorph-emphasis-spacing {
+  letter-spacing: 0.12em;
+  word-spacing: 0.2em;
+}
+
+/* Meta comment transformation styles */
+.narramorph-transform-metaComment {
+  position: relative;
+}
+
+.narramorph-comment {
+  display: inline-block;
+  color: #888;
+  font-size: 0.9em;
+  opacity: 0;
+  transform: translateY(-5px);
+  transition: opacity 0.7s ease, transform 0.7s ease;
+}
+
+.narramorph-commented .narramorph-comment {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Entrance animations for newly transformed content */
+@keyframes highlight-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(64, 156, 255, 0); }
+  50% { box-shadow: 0 0 0 10px rgba(64, 156, 255, 0.2); }
+  100% { box-shadow: 0 0 0 0 rgba(64, 156, 255, 0); }
+}
+
+.narramorph-transform-new {
+  animation: highlight-pulse 2s ease-out;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .narramorph-transform-replace,
+  .narramorph-transform-fragment,
+  .narramorph-transform-expand,
+  .narramorph-transform-emphasize,
+  .narramorph-transform-metaComment {
+    display: inline-block;
+    width: 100%;
+    margin: 4px 0;
+  }
+}
+
+/* Debug panel styles */
+.narramorph-debug {
+  margin-top: 2rem;
+  padding: 1rem;
+  background-color: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-color);
+}
+
+.narramorph-debug h4 {
+  color: var(--text-color);
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.narramorph-debug ul {
+  list-style-type: none;
+  padding-left: 0;
+  margin-bottom: 1rem;
+}
+
+.narramorph-debug li {
+  padding: 0.25rem 0;
+  opacity: 0.9;
+}
+
+.narramorph-debug p {
+  margin: 0.25rem 0;
+  font-size: 0.9em;
+}

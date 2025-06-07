@@ -157,3 +157,24 @@
   50% { opacity: 1; }
   100% { opacity: 0.5; }
 }
+
+/* Initial pulse animation for nodes when first visiting the site */
+.first-visit canvas {
+  animation: canvasPulse 2s ease-in-out 1;
+}
+
+@keyframes canvasPulse {
+  0% { filter: brightness(1); }
+  50% { filter: brightness(1.3); }
+  100% { filter: brightness(1); }
+}
+
+/* Force field hover effect enhancement */
+.first-visit .force-field-hover {
+  animation: forcePulse 2s infinite alternate;
+}
+
+@keyframes forcePulse {
+  0% { opacity: 0.5; }
+  100% { opacity: 1; }
+}

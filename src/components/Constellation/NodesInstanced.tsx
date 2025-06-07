@@ -310,6 +310,11 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
               position={[position[0], position[1], position[2]]}
               onClick={(e) => {
                 e.stopPropagation();
+                
+                // Emit custom event to hide tooltip when a node is clicked
+                const nodeUnhoverEvent = new CustomEvent('node-unhover');
+                window.dispatchEvent(nodeUnhoverEvent);
+                
                 if (onNodeClick) {
                   if (clickableNodeIds && !clickableNodeIds.includes(node.id)) {
                     return;
@@ -319,7 +324,12 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
                   if (selectedNodeId === null) {
                     dispatch(nodeSelected(node.id));
                     dispatch(visitNode(node.id));
-                    dispatch(navigateToNode(node.id));
+                    dispatch(navigateToNode({
+                      nodeId: node.id,
+                      character: node.character,
+                      temporalValue: node.temporalValue,
+                      attractors: node.strangeAttractors
+                    }));
                     return;
                   }
                   
@@ -332,7 +342,12 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
                   if (isConnected) {
                     dispatch(nodeSelected(node.id));
                     dispatch(visitNode(node.id));
-                    dispatch(navigateToNode(node.id));
+                    dispatch(navigateToNode({
+                      nodeId: node.id,
+                      character: node.character,
+                      temporalValue: node.temporalValue,
+                      attractors: node.strangeAttractors
+                    }));
                   }
                 }
               }}
@@ -340,11 +355,28 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
                 e.stopPropagation();
                 if (node.id !== hoveredNodeId) {
                   dispatch(nodeHovered(node.id));
+                  
+                  // Emit custom event for tooltip positioning
+                  // Just use client coordinates from the event directly
+                  const nodeHoverEvent = new CustomEvent('node-hover', {
+                    detail: {
+                      position: {
+                        x: e.clientX,
+                        y: e.clientY - 40 // Position tooltip 40px above cursor
+                      },
+                      nodeId: node.id
+                    }
+                  });
+                  window.dispatchEvent(nodeHoverEvent);
                 }
               }}
               onPointerOut={(e) => {
                 e.stopPropagation();
                 dispatch(nodeUnhovered());
+                
+                // Emit custom event for tooltip hiding
+                const nodeUnhoverEvent = new CustomEvent('node-unhover');
+                window.dispatchEvent(nodeUnhoverEvent);
               }}
             >
               <octahedronGeometry args={[0.5, 0]} />

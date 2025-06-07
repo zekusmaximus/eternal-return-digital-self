@@ -8,6 +8,7 @@ import { initializeNodes } from './store/slices/nodesSlice';
 import { selectViewMode } from './store/slices/interfaceSlice';
 import ConstellationView from './components/Constellation/ConstellationView';
 import NodeView from './components/NodeView/NodeView';
+import Onboarding from './components/Onboarding/Onboarding';
 import './App.css';
 
 // Inner App component that uses Redux hooks
@@ -35,6 +36,7 @@ function AppContent() {
       ) : (
         <NodeView />
       )}
+      <Onboarding />
     </div>
   );
 }

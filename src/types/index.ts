@@ -54,15 +54,51 @@ export type NodeVisualState =
 export type EndpointOrientation = 'past' | 'present' | 'future';
 
 /**
- * Transformation rules for text content based on visit patterns
+ * Enhanced transformation condition for content transformations
+ */
+export interface TransformationCondition {
+  // Basic visit count threshold
+  visitCount?: number;
+  
+  // Sequence of nodes that must have been visited in order
+  visitPattern?: string[];
+  
+  // Set of nodes that must have been visited (in any order)
+  previouslyVisitedNodes?: string[];
+  
+  // Strange attractors that must be engaged
+  strangeAttractorsEngaged?: StrangeAttractor[];
+  
+  // Temporal position requirement (past, present, future)
+  temporalPosition?: TemporalLabel;
+  
+  // Time-based conditions
+  minTimeSpentInNode?: number; // Minimum time spent in current node (ms)
+  totalReadingTime?: number;   // Minimum total reading time (ms)
+  
+  // Endpoint progress conditions
+  endpointProgress?: {
+    orientation: EndpointOrientation;
+    minValue: number; // Minimum progress value (0-100)
+  };
+  
+  // Revisit pattern - e.g., must have revisited a specific node at least N times
+  revisitPattern?: {
+    nodeId: string;
+    minVisits: number;
+  }[];
+  
+  // Logical operators for complex conditions
+  anyOf?: TransformationCondition[]; // At least one condition must be true
+  allOf?: TransformationCondition[]; // All conditions must be true
+  not?: TransformationCondition;     // Condition must be false
+}
+
+/**
+ * Transformation rules for text content based on conditions
  */
 export interface TransformationRule {
-  condition: {
-    visitCount?: number;
-    previouslyVisitedNodes?: string[];
-    visitPattern?: string[];
-    strangeAttractorsEngaged?: StrangeAttractor[];
-  };
+  condition: TransformationCondition;
   transformations: TextTransformation[];
 }
 
@@ -139,6 +175,31 @@ export type Connection = {
   target: string;
 };
 /**
+ * Represents a single transition between nodes
+ */
+export interface NodeTransition {
+  from: string; // Source node ID
+  to: string; // Target node ID
+  timestamp: number; // When the transition occurred
+  duration: number; // How long the reader spent on the "from" node
+  attractorsEngaged: StrangeAttractor[]; // Which attractors were engaged during this transition
+}
+
+/**
+ * Represents detailed information about a node visit
+ */
+export interface NodeVisit {
+  nodeId: string; // ID of the visited node
+  timestamp: number; // When the visit occurred
+  duration: number; // How long the visit lasted
+  character: Character; // Character perspective of the node
+  temporalLayer: TemporalLabel; // Temporal layer of the node
+  engagedAttractors: StrangeAttractor[]; // Attractors engaged during this visit
+  index: number; // Sequential position in the reading path (0-based)
+  revisitCount: number; // How many times this specific node had been visited (including this visit)
+}
+
+/**
  * Reader path records the journey through the narrative
  */
 export interface ReadingPath {
@@ -147,6 +208,21 @@ export interface ReadingPath {
   durations: Record<string, number>; // Duration spent on each node
   revisitPatterns: Record<string, number>; // Count of revisits per node
   attractorsEngaged: Record<StrangeAttractor, number>; // Count of engagements with attractors
+  
+  // Enhanced path tracking - optional to maintain compatibility
+  detailedVisits?: NodeVisit[]; // Detailed information about each visit
+  transitions?: NodeTransition[]; // Detailed information about transitions between nodes
+  characterFocus?: Record<Character, number>; // Count of visits to each character's nodes
+  temporalLayerFocus?: Record<TemporalLabel, number>; // Count of visits to each temporal layer
+  readingRhythm?: {
+    fastTransitions: number; // Count of transitions under a threshold duration
+    deepEngagements: number; // Count of visits over a threshold duration
+  };
+  patternSequences?: {
+    repeatedSequences: string[][]; // Sequences of nodes that have been visited more than once
+    characterSequences: Character[][]; // Sequences of character perspectives
+    temporalSequences: TemporalLabel[][]; // Sequences of temporal layers
+  };
 }
 
 /**

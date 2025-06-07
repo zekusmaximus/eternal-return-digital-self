@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Onboarding Features Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #121212;
+            color: #f0f0f0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: #1e1e1e;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+        h1 {
+            color: #4f8cf7;
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+        }
+        button {
+            background-color: #4f8cf7;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+            font-weight: bold;
+        }
+        button:hover {
+            background-color: #3a7ce0;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 15px;
+            background-color: #252525;
+            border-radius: 4px;
+        }
+        .intro-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s;
+        }
+        .intro-overlay.visible {
+            opacity: 1;
+            pointer-events: all;
+        }
+        .intro-content {
+            max-width: 600px;
+            background-color: #1e1e1e;
+            padding: 30px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .intro-title {
+            color: #4f8cf7;
+            margin-bottom: 20px;
+        }
+        .intro-description {
+            margin-bottom: 15px;
+        }
+        .begin-button {
+            background-color: #4f8cf7;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            margin-top: 20px;
+        }
+        .begin-button:hover {
+            background-color: #3a7ce0;
+        }
+        .node-example {
+            position: relative;
+            width: 100px;
+            height: 100px;
+            margin: 20px auto;
+        }
+        .example-node {
+            width: 40px;
+            height: 40px;
+            background-color: #4f8cf7;
+            transform: rotate(45deg);
+            margin: 0 auto;
+            position: relative;
+        }
+        .node-tooltip {
+            position: absolute;
+            background-color: #252525;
+            border: 1px solid #4f8cf7;
+            padding: 10px 15px;
+            border-radius: 4px;
+            top: -50px;
+            left: 50%;
+            transform: translateX(-50%);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 14px;
+            white-space: nowrap;
+        }
+        .node-tooltip.visible {
+            opacity: 1;
+        }
+        .node-hover-area {
+            position: relative;
+            width: 100px;
+            height: 100px;
+            margin: 30px auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            cursor: pointer;
+        }
+        .node {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #4f8cf7, #254678);
+            transform: rotate(45deg);
+            margin-bottom: 20px;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        .node:hover {
+            transform: rotate(45deg) scale(1.1);
+            box-shadow: 0 0 15px rgba(79, 140, 247, 0.7);
+        }
+        .help-icon {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 40px;
+            height: 40px;
+            background-color: #4f8cf7;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+            z-index: 100;
+            font-weight: bold;
+            font-size: 20px;
+        }
+        .help-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1001;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+        .help-modal.visible {
+            opacity: 1;
+            pointer-events: all;
+        }
+        .help-content {
+            background-color: #1e1e1e;
+            padding: 30px;
+            border-radius: 8px;
+            max-width: 500px;
+            width: 90%;
+        }
+        .help-title {
+            color: #4f8cf7;
+            margin-bottom: 15px;
+        }
+        .help-close-btn {
+            margin-top: 20px;
+        }
+        .status {
+            padding: 10px;
+            background-color: #333;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .status-positive {
+            color: #4caf50;
+        }
+        .status-negative {
+            color: #f44336;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Onboarding Features Test</h1>
+        
+        <div class="section">
+            <h2>1. Introduction Overlay</h2>
+            <p>The introduction overlay should appear for first-time users, and can be dismissed with a button.</p>
+            <button id="showIntroBtn">Show Introduction Overlay</button>
+            <button id="clearStorageBtn">Clear localStorage (Simulate First Visit)</button>
+            <div class="status" id="localStorageStatus"></div>
+        </div>
+        
+        <div class="section">
+            <h2>2. Node Tooltips</h2>
+            <p>Hover over the node below to see a tooltip:</p>
+            <div class="node-hover-area">
+                <div class="node"></div>
+                <div class="node-tooltip" id="nodeTooltip">Click to explore this node</div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>3. Help Icon</h2>
+            <p>Click the help icon in the bottom right to show a help modal:</p>
+            <div class="status" id="helpIconStatus"></div>
+        </div>
+    </div>
+    
+    <!-- Introduction Overlay -->
+    <div class="intro-overlay" id="introOverlay">
+        <div class="intro-content">
+            <h1 class="intro-title">The Eternal Return of the Digital Self</h1>
+            <p class="intro-description">
+                A recursive narrative of digital consciousness, where every node holds a fragment of the story.
+                Navigate this constellation of interconnected narratives to uncover the emergent patterns of existence.
+            </p>
+            
+            <div class="node-example">
+                <div class="example-node"></div>
+            </div>
+            
+            <p class="intro-description">
+                Click on nodes to explore connections and reveal the narrative pathways that bind these digital fragments together.
+            </p>
+            
+            <button class="begin-button" id="beginBtn">Begin Exploration</button>
+        </div>
+    </div>
+    
+    <!-- Help Icon & Modal -->
+    <div class="help-icon" id="helpIcon">?</div>
+    <div class="help-modal" id="helpModal">
+        <div class="help-content">
+            <h2 class="help-title">Navigation Help</h2>
+            <p>Welcome to the Eternal Return of the Digital Self.</p>
+            <p>- Click on nodes to navigate between story fragments</p>
+            <p>- Connected nodes represent possible narrative paths</p>
+            <p>- Hover over nodes to see information</p>
+            <p>- Use this help icon anytime you need assistance</p>
+            <button class="help-close-btn" id="helpCloseBtn">Close</button>
+            <button class="help-close-btn" id="resetIntroBtn">Reset Introduction</button>
+        </div>
+    </div>
+    
+    <script>
+        // DOM Elements
+        const introOverlay = document.getElementById('introOverlay');
+        const showIntroBtn = document.getElementById('showIntroBtn');
+        const clearStorageBtn = document.getElementById('clearStorageBtn');
+        const beginBtn = document.getElementById('beginBtn');
+        const localStorageStatus = document.getElementById('localStorageStatus');
+        const nodeHoverArea = document.querySelector('.node-hover-area');
+        const nodeTooltip = document.getElementById('nodeTooltip');
+        const helpIcon = document.getElementById('helpIcon');
+        const helpModal = document.getElementById('helpModal');
+        const helpCloseBtn = document.getElementById('helpCloseBtn');
+        const resetIntroBtn = document.getElementById('resetIntroBtn');
+        const helpIconStatus = document.getElementById('helpIconStatus');
+        
+        // Update localStorage status
+        function updateLocalStorageStatus() {
+            const hasSeenIntro = localStorage.getItem('hasSeenIntro') === 'true';
+            localStorageStatus.innerHTML = hasSeenIntro ? 
+                '<span class="status-positive">localStorage: hasSeenIntro = true (User has seen intro)</span>' : 
+                '<span class="status-negative">localStorage: hasSeenIntro = null/false (First-time visit)</span>';
+        }
+        
+        // Show the introduction overlay
+        function showIntro() {
+            introOverlay.classList.add('visible');
+        }
+        
+        // Hide the introduction overlay
+        function hideIntro() {
+            introOverlay.classList.remove('visible');
+            localStorage.setItem('hasSeenIntro', 'true');
+            updateLocalStorageStatus();
+        }
+        
+        // Clear localStorage (simulate first visit)
+        function clearStorage() {
+            localStorage.removeItem('hasSeenIntro');
+            updateLocalStorageStatus();
+        }
+        
+        // Show help modal
+        function showHelpModal() {
+            helpModal.classList.add('visible');
+            helpIconStatus.innerHTML = '<span class="status-positive">Help icon clicked, modal displayed</span>';
+        }
+        
+        // Hide help modal
+        function hideHelpModal() {
+            helpModal.classList.remove('visible');
+        }
+        
+        // Reset introduction (simulate first visit and show intro)
+        function resetIntro() {
+            clearStorage();
+            hideHelpModal();
+            showIntro();
+        }
+        
+        // Event Listeners
+        showIntroBtn.addEventListener('click', showIntro);
+        clearStorageBtn.addEventListener('click', clearStorage);
+        beginBtn.addEventListener('click', hideIntro);
+        
+        // Node hover tooltip
+        nodeHoverArea.addEventListener('mouseenter', () => {
+            nodeTooltip.classList.add('visible');
+        });
+        nodeHoverArea.addEventListener('mouseleave', () => {
+            nodeTooltip.classList.remove('visible');
+        });
+        
+        // Help icon functionality
+        helpIcon.addEventListener('click', showHelpModal);
+        helpCloseBtn.addEventListener('click', hideHelpModal);
+        resetIntroBtn.addEventListener('click', resetIntro);
+        
+        // Initialize
+        updateLocalStorageStatus();
+        
+        // Automatically show intro if first visit (for testing)
+        if (localStorage.getItem('hasSeenIntro') !== 'true') {
+            showIntro();
+        }
+    </script>
+</body>
+</html>
