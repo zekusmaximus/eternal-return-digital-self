@@ -102,13 +102,7 @@ export interface Node {
 /**
  * Node instance state - combines static node data with reader-specific state
  */
-export interface NodeState extends Node {
-  visitCount: number;
-  lastVisitTimestamp: number;
-  currentState: NodeVisualState;
-  revealedConnections: string[]; // All available connections (initial + revealed)
-  transformations: TransformationRule[]; // Applied transformations
-}
+import { NodeState } from '../types';
 
 /**
  * Reader path records the journey through the narrative
@@ -144,6 +138,8 @@ export interface RootState {
     viewMode: 'constellation' | 'reading';
     showMiniConstellation: boolean;
     showMetaInterface: boolean;
+    hoveredNodeId: string | null;
+    selectedNodeId: string | null;
     showStrangeAttractors: boolean;
     constellationZoom: number;
     constellationRotation: {

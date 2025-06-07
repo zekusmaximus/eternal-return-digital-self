@@ -9,6 +9,9 @@ export default defineConfig({
       '@': resolve(__dirname, 'src')
     }
   },
+  optimizeDeps: {
+    include: ['react-markdown', 'remark-gfm'],
+  },
   // Ensure content files are properly served
   publicDir: 'public',
   // Configure static file serving

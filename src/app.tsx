@@ -22,6 +22,14 @@ function AppContent() {
   
   return (
     <div className="app-container">
+      <header className="app-header">
+        <h1 className="app-title">The Eternal Return of the Digital Self</h1>
+      </header>
+      <div className="stars-container">
+        <div className="stars"></div>
+        <div className="stars2"></div>
+        <div className="stars3"></div>
+      </div>
       {viewMode === 'constellation' ? (
         <ConstellationView />
       ) : (

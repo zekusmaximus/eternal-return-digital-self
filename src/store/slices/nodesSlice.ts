@@ -4,7 +4,7 @@
  */
 
 import { createSlice, PayloadAction, createAsyncThunk, createSelector } from '@reduxjs/toolkit';
-import { Node, NodeState, NodeVisualState, TransformationRule } from '../types';
+import { Node, NodeState, NodeVisualState, TransformationRule, ConstellationNode, NarramorphContent, RootState } from '../../types';
 
 export interface NodesState { // Add 'export' right here
   data: Record<string, NodeState>;
@@ -191,16 +191,42 @@ export const initializeNodes = createAsyncThunk(
 
 export const loadNodeContent = createAsyncThunk(
   'nodes/loadContent',
-  async (nodeId: string, { rejectWithValue }) => {
+  async (nodeId: string, { getState, rejectWithValue }) => {
     try {
-      // In production, this would load content from files or API
-      // For now, we'll return a placeholder
-      return {
-        nodeId,
-        content: 'Placeholder content for ' + nodeId,
-      };
-    } catch {
-      return rejectWithValue(`Failed to load content for node ${nodeId}`);
+      const state = getState() as RootState;
+      const node = state.nodes.data[nodeId];
+      if (!node) {
+        return rejectWithValue(`Node with id ${nodeId} not found`);
+      }
+      const response = await fetch(`/src/content/${node.contentSource}`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch content for ${node.contentSource}`);
+      }
+      const text = await response.text();
+
+      const content: NarramorphContent = {};
+      const parts = text.split(/---t\[(\d+)\]/);
+
+      if (parts.length > 0 && !text.startsWith('---t[')) {
+          content[0] = parts[0].trim();
+      }
+
+      for (let i = 1; i < parts.length; i += 2) {
+        const visitCount = parseInt(parts[i], 10);
+        const contentText = parts[i + 1]?.trim() ?? '';
+        if (!isNaN(visitCount)) {
+            content[visitCount] = contentText;
+        }
+      }
+
+      if (Object.keys(content).length === 0) {
+        content[0] = text.trim();
+      }
+
+      return { nodeId, content };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      return rejectWithValue(`Failed to load content for node ${nodeId}: ${message}`);
     }
   }
 );
@@ -229,6 +255,17 @@ const nodesSlice = createSlice({
           node.currentState = 'complex';
         } else if (node.visitCount >= node.transformationThresholds.revisit) {
           node.currentState = 'revisited';
+        }
+
+        // Update currentContent based on the new visit count
+        if (node.content) {
+            const availableCounts = Object.keys(node.content)
+                .map(Number)
+                .sort((a, b) => b - a); // Sort descending
+            const bestMatch = availableCounts.find(count => node.visitCount >= count);
+            if (bestMatch !== undefined) {
+                node.currentContent = node.content[bestMatch];
+            }
         }
       }
     },
@@ -275,6 +312,8 @@ const nodesSlice = createSlice({
         node.currentState = 'unvisited';
         node.revealedConnections = [...node.initialConnections];
         node.transformations = [];
+        node.content = null;
+        node.currentContent = null;
       });
     },
   },
@@ -297,6 +336,8 @@ const nodesSlice = createSlice({
           currentState: 'unvisited',
           revealedConnections: [...node.initialConnections],
           transformations: [],
+          content: null,
+          currentContent: null,
         };
       });
     });
@@ -309,7 +350,22 @@ const nodesSlice = createSlice({
     builder.addCase(loadNodeContent.pending, (state) => {
       state.loading = true;
     });
-    builder.addCase(loadNodeContent.fulfilled, (state) => {
+    builder.addCase(loadNodeContent.fulfilled, (state, action: PayloadAction<{ nodeId: string; content: NarramorphContent }>) => {
+      const { nodeId, content } = action.payload;
+      const node = state.data[nodeId];
+      if (node) {
+          node.content = content;
+          // Set initial content based on current visit count
+          const availableCounts = Object.keys(node.content)
+              .map(Number)
+              .sort((a, b) => b - a); // Sort descending
+          const bestMatch = availableCounts.find(count => node.visitCount >= count);
+          if (bestMatch !== undefined) {
+              node.currentContent = node.content[bestMatch];
+          } else {
+              node.currentContent = null; // Or some default
+          }
+      }
       state.loading = false;
     });
     builder.addCase(loadNodeContent.rejected, (state, action) => {
@@ -347,21 +403,56 @@ export const selectAllNodes = createSelector(
 );
 
 // Memoized selector for all connections
-export const selectAllConnections = createSelector(
+export const selectConnections = createSelector(
   (state: { nodes: NodesState }) => state.nodes.data,
   (nodes) => {
-    const connections: Array<{ source: string, target: string }> = [];
+    const connections: Array<{ start: string, end: string }> = [];
     
     Object.values(nodes).forEach(node => {
       node.revealedConnections.forEach(targetId => {
-        connections.push({
-          source: node.id,
-          target: targetId
-        });
+        // Avoid duplicate connections (e.g., A-B and B-A)
+        const connectionExists = connections.some(
+          conn => (conn.start === node.id && conn.end === targetId) || (conn.start === targetId && conn.end === node.id)
+        );
+
+        if (!connectionExists) {
+          connections.push({
+            start: node.id,
+            end: targetId
+          });
+        }
       });
     });
     
     return connections;
+  }
+);
+
+// Memoized selector for all nodes formatted for the constellation view
+export const selectConstellationNodes = createSelector(
+  [selectAllNodes],
+  (nodes): ConstellationNode[] => {
+    // Basic layout logic: distribute nodes in a circle
+    const numNodes = nodes.length;
+    const radius = 15;
+    return nodes.map((node, index) => {
+      const angle = (index / numNodes) * 2 * Math.PI;
+      const x = radius * Math.cos(angle);
+      const y = radius * Math.sin(angle);
+
+      // Assign color based on character
+      let color = '#ffffff'; // Default
+      if (node.character === 'Archaeologist') color = '#ff6b6b';
+      if (node.character === 'Algorithm') color = '#4ecdc4';
+      if (node.character === 'LastHuman') color = '#45b7d1';
+
+      return {
+        ...node,
+        x,
+        y,
+        color,
+      };
+    });
   }
 );
 

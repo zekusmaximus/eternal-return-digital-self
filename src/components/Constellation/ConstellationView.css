@@ -1,7 +1,7 @@
 .constellation-container {
   width: 100vw;
   height: 100vh;
-  background-color: var(--background-color);
+  background-color: transparent; /* Changed from var(--background-color) to transparent */
   position: relative;
   overflow: hidden;
 }

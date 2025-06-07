@@ -5,7 +5,7 @@
     flex-direction: column;
     position: relative;
     overflow: hidden;
-    background-color: var(--background-color);
+    background-color: transparent; /* Changed from var(--background-color) to transparent */
   }
   
   .temporal-indicator {
@@ -114,7 +114,8 @@
   .node-navigation {
     padding: var(--spacing-md) var(--spacing-lg);
     display: flex;
-    justify-content: space-between;
+    justify-content: center;
+    gap: var(--spacing-lg);
     align-items: center;
     background-color: rgba(20, 20, 20, 0.7);
     backdrop-filter: blur(10px);

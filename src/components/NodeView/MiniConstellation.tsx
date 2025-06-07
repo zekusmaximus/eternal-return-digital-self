@@ -1,168 +1,76 @@
-import React, { useRef } from 'react';
-import { useSelector } from 'react-redux';
-import { RootState } from '../../store/types';
-import { selectAllConnections } from '../../store/slices/nodesSlice';
+import React, { useMemo, useRef } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import { selectConstellationNodes, selectConnections } from '../../store/slices/nodesSlice';
+import { nodeSelected } from '../../store/slices/interfaceSlice';
+import { Canvas } from '@react-three/fiber';
+import { OrbitControls, Bounds } from '@react-three/drei';
+import { NodesInstanced } from '../Constellation/NodesInstanced';
+import ConnectionsBatched from '../Constellation/ConnectionsBatched';
+import { InstancedMesh } from 'three';
 
 interface MiniConstellationProps {
   currentNodeId: string;
-  onNodeSelect: (nodeId: string) => void;
 }
 
-/**
- * A miniature version of the constellation view
- * Displayed in the corner of the node view for context and navigation
- */
-const MiniConstellation: React.FC<MiniConstellationProps> = ({ 
-  currentNodeId, 
-  onNodeSelect 
-}) => {
-  const svgRef = useRef<SVGSVGElement>(null);
-  
-  // Get all nodes from Redux store
-  const nodes = useSelector((state: RootState) => 
-    Object.values(state.nodes.data)
-  ) as Array<{ id: string; temporalValue: number; character: string; currentState: string }>;
-  
-  // Get all connections
-  const connections = useSelector(selectAllConnections);
-  
-  // Get dimensions
-  const width = 200;
-  const height = 200;
-  const centerX = width / 2;
-  
-  // Calculate node positions based on temporal value and character
-  // This is a simplified 2D positioning
-  const getNodePosition = (temporalValue: number, character: string) => {
-    // Calculate y position based on temporal value (1-9)
-    // Lower values are positioned higher (past at top, future at bottom)
-    const yPosition = 40 + (temporalValue * 15);
-    
-    // Calculate x position based on character
-    let xOffset = 0;
-    switch (character) {
-      case 'Archaeologist':
-        xOffset = -50;
-        break;
-      case 'Algorithm':
-        xOffset = 0;
-        break;
-      case 'LastHuman':
-        xOffset = 50;
-        break;
-    }
-    
-    return {
-      x: centerX + xOffset,
-      y: yPosition
-    };
+const MiniConstellation: React.FC<MiniConstellationProps> = ({ currentNodeId }) => {
+  const dispatch = useDispatch();
+  const nodes = useSelector(selectConstellationNodes);
+  const connections = useSelector(selectConnections);
+  const instancedMeshRef = useRef<InstancedMesh>(null!);
+
+  const mappedConnections = useMemo(() => connections.map(c => ({ source: c.start, target: c.end })), [connections]);
+
+  const clickableNodeIds = useMemo(() => {
+    const connectedIds = new Set<string>();
+    connections.forEach(conn => {
+      if (conn.start === currentNodeId) {
+        connectedIds.add(conn.end);
+      } else if (conn.end === currentNodeId) {
+        connectedIds.add(conn.start);
+      }
+    });
+    return Array.from(connectedIds);
+  }, [connections, currentNodeId]);
+
+  const handleNodeClick = (nodeId: string) => {
+    dispatch(nodeSelected(nodeId));
   };
-  
-  // Get color based on character
-  const getNodeColor = (character: string): string => {
-    switch (character) {
-      case 'Archaeologist':
-        return 'var(--archaeologist-primary)';
-      case 'Algorithm':
-        return 'var(--algorithm-primary)';
-      case 'LastHuman':
-        return 'var(--lasthuman-primary)';
-      default:
-        return '#cccccc';
-    }
-  };
-  
+
+  const nodePositions = useMemo(() => {
+    const positions: { [key: string]: [number, number, number] } = {};
+    nodes.forEach((node, index) => {
+      const numNodes = nodes.length;
+      const radius = 5;
+      const phi = Math.acos(-1 + (2 * index) / numNodes);
+      const theta = Math.sqrt(numNodes * Math.PI) * phi;
+      const x = radius * Math.cos(theta) * Math.sin(phi);
+      const y = radius * Math.sin(theta) * Math.sin(phi);
+      const z = radius * Math.cos(phi);
+      positions[node.id] = [x, y, z];
+    });
+    return positions;
+  }, [nodes]);
+
   return (
-    <svg 
-      ref={svgRef} 
-      width={width} 
-      height={height} 
-      className="mini-constellation-svg"
-    >
-      {/* Background */}
-      <rect 
-        x={0} 
-        y={0} 
-        width={width} 
-        height={height} 
-        fill="rgba(0,0,0,0.3)" 
-      />
-      
-      {/* Draw connections between nodes */}
-      {connections.map(connection => {
-        const sourceNode = nodes.find(node => node.id === connection.source);
-        const targetNode = nodes.find(node => node.id === connection.target);
-        
-        if (!sourceNode || !targetNode) return null;
-        
-        const sourcePos = getNodePosition(sourceNode.temporalValue, sourceNode.character);
-        const targetPos = getNodePosition(targetNode.temporalValue, targetNode.character);
-        
-        // Highlight connections from current node
-        const isActive = 
-          connection.source === currentNodeId || 
-          connection.target === currentNodeId;
-        
-        return (
-          <line
-            key={`${connection.source}-${connection.target}`}
-            x1={sourcePos.x}
-            y1={sourcePos.y}
-            x2={targetPos.x}
-            y2={targetPos.y}
-            stroke={isActive ? 'var(--node-primary)' : '#333'}
-            strokeWidth={isActive ? 1.5 : 0.5}
-            opacity={isActive ? 0.8 : 0.4}
+    <div className="mini-constellation-container" style={{ width: '200px', height: '200px' }}>
+      <Canvas>
+        <ambientLight intensity={0.5} />
+        <pointLight position={[10, 10, 10]} />
+        <Bounds fit clip observe>
+          <NodesInstanced
+            ref={instancedMeshRef}
+            nodes={nodes}
+            nodePositions={nodePositions}
+            connections={connections}
+            overrideSelectedNodeId={currentNodeId}
+            onNodeClick={handleNodeClick}
+            clickableNodeIds={clickableNodeIds}
           />
-        );
-      })}
-      
-      {/* Draw nodes */}
-      {nodes.map(node => {
-        const position = getNodePosition(node.temporalValue, node.character);
-        const isCurrentNode = node.id === currentNodeId;
-        const nodeSize = isCurrentNode ? 10 : 6;
-        
-        return (
-          <g
-            key={node.id}
-            transform={`translate(${position.x}, ${position.y})`}
-            onClick={() => onNodeSelect(node.id)}
-            className={`mini-node ${node.currentState} ${isCurrentNode ? 'current' : ''}`}
-            style={{ cursor: 'pointer' }}
-          >
-            <circle
-              r={nodeSize}
-              fill={getNodeColor(node.character)}
-              opacity={node.currentState === 'unvisited' ? 0.4 : 0.8}
-              stroke={isCurrentNode ? 'white' : 'none'}
-              strokeWidth={isCurrentNode ? 2 : 0}
-            />
-          </g>
-        );
-      })}
-      
-      {/* Legend */}
-      <g transform="translate(10, 170)" className="mini-constellation-legend">
-        <text 
-          x="0" 
-          y="0" 
-          fill="white" 
-          fontSize="8"
-          opacity="0.7"
-        >
-          Current Node
-        </text>
-        <circle 
-          cx="60" 
-          cy="-3" 
-          r="3" 
-          fill="white" 
-          stroke="white"
-          strokeWidth="1"
-        />
-      </g>
-    </svg>
+          <ConnectionsBatched ref={instancedMeshRef} connections={mappedConnections} nodePositions={nodePositions} />
+        </Bounds>
+        <OrbitControls enableZoom={false} enablePan={false} />
+      </Canvas>
+    </div>
   );
 };
 

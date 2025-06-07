@@ -102,14 +102,42 @@ export interface Node {
 /**
  * Node instance state - combines static node data with reader-specific state
  */
+export interface NarramorphContent {
+  [visitCount: number]: string;
+}
+
 export interface NodeState extends Node {
   visitCount: number;
   lastVisitTimestamp: number;
   currentState: NodeVisualState;
   revealedConnections: string[]; // All available connections (initial + revealed)
   transformations: TransformationRule[]; // Applied transformations
+  content: NarramorphContent | null; // Holds all content versions
+  currentContent: string | null; // The currently displayed content
 }
 
+/**
+ * Node representation for the constellation view, with 2D coordinates and color
+ */
+export interface ConstellationNode extends NodeState {
+  x: number;
+  y: number;
+  color: string;
+}
+
+/**
+ * Map of node IDs to their 3D positions for the constellation view
+ */
+export type NodePositions = {
+  [key: string]: [number, number, number];
+};
+/**
+ * Represents a connection between two nodes
+ */
+export type Connection = {
+  source: string;
+  target: string;
+};
 /**
  * Reader path records the journey through the narrative
  */
