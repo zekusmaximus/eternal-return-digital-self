@@ -109,8 +109,23 @@ export interface TextTransformation {
   type: 'replace' | 'fragment' | 'expand' | 'emphasize' | 'metaComment';
   selector: string; // Original text to transform
   replacement?: string; // New text (for replace, expand)
+  
+  // Fragment transformation properties
   fragmentPattern?: string; // How to fragment the text
-  emphasis?: 'italic' | 'bold' | 'color' | 'spacing'; // Type of emphasis
+  fragmentStyle?: 'character' | 'word' | 'progressive' | 'random'; // Style of fragmentation
+  
+  // Emphasis transformation properties
+  emphasis?: 'italic' | 'bold' | 'color' | 'spacing' | 'highlight' | 'glitch' | 'fade'; // Type of emphasis
+  intensity?: number; // Intensity level of emphasis (1-5)
+  
+  // Replace transformation properties
+  preserveFormatting?: boolean; // Whether to preserve markdown formatting when replacing
+  
+  // Expand transformation properties
+  expandStyle?: 'append' | 'inline' | 'paragraph' | 'reveal'; // Style of expansion
+  
+  // Meta comment properties
+  commentStyle?: 'inline' | 'footnote' | 'marginalia' | 'interlinear'; // Style of meta comment
 }
 
 /**

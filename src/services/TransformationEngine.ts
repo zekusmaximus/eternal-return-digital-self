@@ -79,10 +79,11 @@ export class TransformationEngine {
    * and current reader and node state
    */
   evaluateCondition(
-    condition: TransformationCondition, 
-    readerState: ReaderState, 
+    condition: TransformationCondition,
+    readerState: ReaderState,
     nodeState: NodeState
   ): boolean {
+    console.log('Evaluating condition:', JSON.stringify(condition));
     // Handle logical operators first
     if (condition.allOf?.length) {
       return condition.allOf.every(subCondition => 
@@ -109,8 +110,8 @@ export class TransformationEngine {
     
     // 2. Previously visited nodes condition
     if (condition.previouslyVisitedNodes?.length) {
-      const visitedNodes = readerState.path.sequence;
-      if (!condition.previouslyVisitedNodes.every(nodeId => 
+      const visitedNodes = readerState.path.sequence || [];
+      if (!condition.previouslyVisitedNodes.every(nodeId =>
         visitedNodes.includes(nodeId))) {
         return false;
       }
@@ -158,7 +159,7 @@ export class TransformationEngine {
     // 7. Endpoint progress condition
     if (condition.endpointProgress) {
       const { orientation, minValue } = condition.endpointProgress;
-      if (readerState.endpointProgress[orientation] < minValue) {
+      if (!readerState.endpointProgress || readerState.endpointProgress[orientation] < minValue) {
         return false;
       }
     }
@@ -166,7 +167,8 @@ export class TransformationEngine {
     // 8. Revisit pattern condition
     if (condition.revisitPattern?.length) {
       for (const pattern of condition.revisitPattern) {
-        const visits = readerState.path.revisitPatterns[pattern.nodeId] || 0;
+        const revisitPatterns = readerState.path.revisitPatterns || {};
+        const visits = revisitPatterns[pattern.nodeId] || 0;
         if (visits < pattern.minVisits) {
           return false;
         }
@@ -206,11 +208,17 @@ export class TransformationEngine {
    * Checks if all required strange attractors have been engaged by the reader
    */
   private checkAttractorsEngaged(
-    attractors: StrangeAttractor[], 
+    attractors: StrangeAttractor[],
     readerState: ReaderState
   ): boolean {
+    if (!attractors || !readerState.path) {
+      return false;
+    }
+    
+    const attractorsEngaged = readerState.path.attractorsEngaged || {};
+    
     return attractors.every(attractor => {
-      const engagementCount = readerState.path.attractorsEngaged[attractor] || 0;
+      const engagementCount = attractorsEngaged[attractor] || 0;
       return engagementCount > 0;
     });
   }
@@ -259,64 +267,295 @@ export class TransformationEngine {
    * Applies a text transformation to the given content
    */
   applyTextTransformation(content: string, transformation: TextTransformation): string {
+    if (!transformation.selector) return content;
+    
+    const escapedSelector = this.escapeRegExp(transformation.selector);
+    const selectorRegex = new RegExp(escapedSelector, 'g');
+    
     switch (transformation.type) {
-      case 'replace':
-        return content.replace(transformation.selector, transformation.replacement || '');
+      case 'replace': {
+        const replacement = transformation.replacement || '';
         
+        // Check if we need to preserve markdown formatting
+        if (transformation.preserveFormatting &&
+            (transformation.selector.includes('*') ||
+             transformation.selector.includes('_') ||
+             transformation.selector.includes('`'))) {
+          // Preserve formatting markers when replacing
+          const markdownRegex = /(\*\*|\*|__|_|`{3}|`)/g;
+          const formatMarkers = transformation.selector.match(markdownRegex) || [];
+          let replacementWithFormat = replacement;
+          
+          formatMarkers.forEach(marker => {
+            if (!replacementWithFormat.includes(marker)) {
+              replacementWithFormat = `${marker}${replacementWithFormat}${marker}`;
+            }
+          });
+          
+          return content.replace(selectorRegex, replacementWithFormat);
+        }
+        
+        return content.replace(selectorRegex, replacement);
+      }
+      
       case 'fragment': {
         if (!transformation.fragmentPattern) return content;
-        const fragmentedText = transformation.selector.split('')
-          .join(transformation.fragmentPattern);
-        return content.replace(transformation.selector, fragmentedText);
+        
+        // Store pattern in a local variable to prevent TypeScript undefined errors
+        const fragmentPattern = transformation.fragmentPattern;
+        console.log('Fragment pattern:', fragmentPattern);
+        
+        // Handle different fragmentation patterns
+        const fragmentStyle = transformation.fragmentStyle || 'character';
+        let fragmentedText = '';
+        
+        switch (fragmentStyle) {
+          case 'character': {
+            // Fragment between each character
+            fragmentedText = transformation.selector.split('')
+              .join(fragmentPattern);
+            break;
+          }
+            
+          case 'word': {
+            // Fragment between words
+            fragmentedText = transformation.selector.split(' ')
+              .join(` ${fragmentPattern} `);
+            break;
+          }
+            
+          case 'progressive': {
+            // Increasingly fragmented text
+            const chars = transformation.selector.split('');
+            fragmentedText = chars.map((char, index) => {
+              const fragmentCount = Math.floor(index / (chars.length / 5)) + 1;
+              return char + fragmentPattern.repeat(fragmentCount);
+            }).join('');
+            break;
+          }
+            
+          case 'random': {
+            // Randomly insert fragments
+            const words = transformation.selector.split(' ');
+            fragmentedText = words.map(word => {
+              return Math.random() > 0.5 ?
+                `${word} ${fragmentPattern}` :
+                word;
+            }).join(' ');
+            break;
+          }
+            
+          default: {
+            fragmentedText = transformation.selector.split('')
+              .join(fragmentPattern);
+          }
+        }
+        
+        return content.replace(selectorRegex, fragmentedText);
       }
+      
+      case 'expand': {
+        const replacement = transformation.replacement || '';
+        const expandStyle = transformation.expandStyle || 'append';
         
-      case 'expand':
-        return content.replace(
-          transformation.selector, 
-          `${transformation.selector}${transformation.replacement ? ` ${transformation.replacement}` : ''}`
-        );
-        
+        switch (expandStyle) {
+          case 'append':
+            // Simply append content (default behavior)
+            return content.replace(
+              selectorRegex,
+              `${transformation.selector} ${replacement}`
+            );
+            
+          case 'inline':
+            // Insert expansion inline with brackets
+            return content.replace(
+              selectorRegex,
+              `${transformation.selector} <span class="narramorph-inline-expansion">[${replacement}]</span>`
+            );
+            
+          case 'paragraph':
+            // Add expansion as a new paragraph
+            return content.replace(
+              selectorRegex,
+              `${transformation.selector}\n\n<div class="narramorph-paragraph-expansion">${replacement}</div>`
+            );
+            
+          case 'reveal':
+            // Reveal hidden content
+            return content.replace(
+              selectorRegex,
+              `${transformation.selector} <span class="narramorph-reveal-expansion">${replacement}</span>`
+            );
+            
+          default:
+            return content.replace(
+              selectorRegex,
+              `${transformation.selector} ${replacement}`
+            );
+        }
+      }
+      
       case 'emphasize': {
         let emphasizedText = transformation.selector;
+        const intensity = transformation.intensity || 1; // Default intensity
         
         switch (transformation.emphasis) {
           case 'italic':
             emphasizedText = `*${transformation.selector}*`;
+            if (intensity > 1) {
+              emphasizedText = `<em class="intensity-${intensity}">${transformation.selector}</em>`;
+            }
             break;
+            
           case 'bold':
             emphasizedText = `**${transformation.selector}**`;
+            if (intensity > 1) {
+              emphasizedText = `<strong class="intensity-${intensity}">${transformation.selector}</strong>`;
+            }
             break;
+            
           case 'color':
-            emphasizedText = `<span class="emphasized-text">${transformation.selector}</span>`;
+            emphasizedText = `<span class="emphasized-text intensity-${intensity}">${transformation.selector}</span>`;
             break;
-          case 'spacing':
-            emphasizedText = transformation.selector.split('').join(' ');
+            
+          case 'spacing': {
+            const spacer = ' '.repeat(intensity);
+            emphasizedText = transformation.selector.split('').join(spacer);
+            break;
+          }
+            
+          case 'highlight':
+            emphasizedText = `<mark class="intensity-${intensity}">${transformation.selector}</mark>`;
+            break;
+            
+          case 'glitch':
+            emphasizedText = `<span class="glitch-text intensity-${intensity}" data-text="${transformation.selector}">${transformation.selector}</span>`;
+            break;
+            
+          case 'fade':
+            emphasizedText = `<span class="fade-text intensity-${intensity}">${transformation.selector}</span>`;
             break;
         }
         
-        return content.replace(transformation.selector, emphasizedText);
+        return content.replace(selectorRegex, emphasizedText);
       }
+      
+      case 'metaComment': {
+        const commentStyle = transformation.commentStyle || 'inline';
+        const commentText = transformation.replacement || '';
         
-      case 'metaComment':
-        return content.replace(
-          transformation.selector,
-          `${transformation.selector} [${transformation.replacement || ''}]`
-        );
-        
+        switch (commentStyle) {
+          case 'inline':
+            // Default inline comment in brackets
+            return content.replace(
+              selectorRegex,
+              `${transformation.selector} <span class="narramorph-comment">[${commentText}]</span>`
+            );
+            
+          case 'footnote': {
+            // Add a footnote marker and text at the bottom
+            const footnoteId = `footnote-${this.generateShortHash(transformation.selector)}`;
+            
+            // Check if content already has a footnotes section
+            const hasFootnotes = content.includes('<div class="narramorph-footnotes">');
+            let contentWithFootnote = content.replace(
+              selectorRegex,
+              `${transformation.selector}<sup class="narramorph-footnote-marker" id="${footnoteId}-ref">[†]</sup>`
+            );
+            
+            // Add footnote text at the bottom
+            if (hasFootnotes) {
+              // Add to existing footnotes section - fix the regex pattern to be more specific
+              const footnoteInsertRegex = /<\/div>\s*<div class="narramorph-footnotes">/;
+              if (footnoteInsertRegex.test(contentWithFootnote)) {
+                contentWithFootnote = contentWithFootnote.replace(
+                  footnoteInsertRegex,
+                  `</div>\n\n<div class="narramorph-footnotes">\n<p id="${footnoteId}" class="narramorph-footnote">† <a href="#${footnoteId}-ref">↩</a> ${commentText}</p>`
+                );
+              } else {
+                // If pattern not found, just append to the end
+                contentWithFootnote += `\n\n<p id="${footnoteId}" class="narramorph-footnote">† <a href="#${footnoteId}-ref">↩</a> ${commentText}</p>`;
+              }
+            } else {
+              // Create new footnotes section
+              contentWithFootnote += `\n\n<div class="narramorph-footnotes">\n<p id="${footnoteId}" class="narramorph-footnote">† <a href="#${footnoteId}-ref">↩</a> ${commentText}</p>\n</div>`;
+            }
+            
+            return contentWithFootnote;
+          }
+            
+          case 'marginalia':
+            // Add comment as marginalia
+            return content.replace(
+              selectorRegex,
+              `<span class="narramorph-marginalia-container">${transformation.selector}<span class="narramorph-marginalia">${commentText}</span></span>`
+            );
+            
+          case 'interlinear':
+            // Add comment between lines of text
+            return content.replace(
+              selectorRegex,
+              `<div class="narramorph-interlinear-container">${transformation.selector}<div class="narramorph-interlinear">${commentText}</div></div>`
+            );
+            
+          default:
+            return content.replace(
+              selectorRegex,
+              `${transformation.selector} [${commentText}]`
+            );
+        }
+      }
+      
       default:
         return content;
     }
   }
   
   /**
+   * Helper function to escape special regex characters in a string
+   */
+  private escapeRegExp(string: string): string {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+  
+  /**
+   * Generate a short hash for a string, useful for creating unique IDs
+   */
+  private generateShortHash(str: string): string {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    return Math.abs(hash).toString(36).substring(0, 6);
+  }
+  
+  /**
    * Applies multiple transformations to content
    */
   applyTransformations(content: string, transformations: TextTransformation[]): string {
-    return transformations.reduce(
-      (currentContent, transformation) => 
-        this.applyTextTransformation(currentContent, transformation),
-      content
-    );
+    console.log('Applying transformations:', transformations.length);
+    
+    if (!content) {
+      console.warn('Content is empty or undefined');
+      return '';
+    }
+    
+    if (!Array.isArray(transformations) || transformations.length === 0) {
+      return content;
+    }
+    
+    try {
+      return transformations.reduce(
+        (currentContent, transformation) =>
+          this.applyTextTransformation(currentContent, transformation),
+        content
+      );
+    } catch (error) {
+      console.error('Error applying transformations:', error);
+      return content; // Return original content on error
+    }
   }
 }
 

@@ -352,34 +352,53 @@ export class TransformationService {
       
       const sanitizedSelector = transformation.selector.replace(/[^a-zA-Z0-9]/g, '_');
       const baseClass = `narramorph-transform-${transformation.type}`;
+      let classList = baseClass;
+      
+      // Get intensity for emphasis styles
+      const intensity = transformation.intensity || 1;
       
       switch (transformation.type) {
         case 'replace':
-          classMap[transformation.selector] = `${baseClass} narramorph-replaced`;
-          break;
-          
-        case 'fragment':
-          classMap[transformation.selector] = `${baseClass} narramorph-fragmented`;
-          break;
-          
-        case 'expand':
-          classMap[transformation.selector] = `${baseClass} narramorph-expanded`;
-          break;
-          
-        case 'emphasize':
-          classMap[transformation.selector] = `${baseClass} narramorph-emphasized`;
-          if (transformation.emphasis) {
-            classMap[transformation.selector] += ` narramorph-emphasis-${transformation.emphasis}`;
+          classList += ' narramorph-replaced';
+          if (transformation.preserveFormatting) {
+            classList += ' preserve-formatting';
           }
           break;
           
+        case 'fragment':
+          classList += ' narramorph-fragmented';
+          if (transformation.fragmentStyle) {
+            classList += ` narramorph-fragment-${transformation.fragmentStyle}`;
+          }
+          break;
+          
+        case 'expand':
+          classList += ' narramorph-expanded';
+          if (transformation.expandStyle) {
+            // Additional classes for different expansion styles will be handled
+            // in the wrapping logic
+          }
+          break;
+          
+        case 'emphasize':
+          classList += ' narramorph-emphasized';
+          if (transformation.emphasis) {
+            classList += ` narramorph-emphasis-${transformation.emphasis}`;
+          }
+          // Add intensity class
+          classList += ` intensity-${intensity}`;
+          break;
+          
         case 'metaComment':
-          classMap[transformation.selector] = `${baseClass} narramorph-commented`;
+          classList += ' narramorph-commented';
+          // Different comment styles will be handled in the wrapping logic
           break;
       }
       
       // Add unique identifier class
-      classMap[transformation.selector] += ` narramorph-element-${sanitizedSelector.substring(0, 20)}`;
+      classList += ` narramorph-element-${sanitizedSelector.substring(0, 20)}`;
+      
+      classMap[transformation.selector] = classList;
     });
     
     return classMap;

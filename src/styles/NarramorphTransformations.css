@@ -102,6 +102,221 @@
   word-spacing: 0.2em;
 }
 
+/* Additional emphasis styles for new types */
+.narramorph-emphasis-highlight {
+  background-color: rgba(255, 245, 189, 0.5);
+  padding: 0 3px;
+  border-radius: 2px;
+  box-shadow: 0 0 1px rgba(0, 0, 0, 0.1);
+}
+
+/* Intensity levels for emphasis */
+.intensity-1 {
+  opacity: 0.85;
+}
+
+.intensity-2 {
+  opacity: 0.9;
+  font-weight: 500;
+}
+
+.intensity-3 {
+  opacity: 0.95;
+  font-weight: 600;
+}
+
+.intensity-4 {
+  opacity: 1;
+  font-weight: 700;
+}
+
+.intensity-5 {
+  opacity: 1;
+  font-weight: 700;
+  transform: scale(1.05);
+}
+
+/* Glitch text effect */
+.glitch-text {
+  position: relative;
+  display: inline-block;
+  color: #333;
+}
+
+.glitch-text::before,
+.glitch-text::after {
+  content: attr(data-text);
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.8;
+}
+
+.glitch-text::before {
+  color: #ff00c1;
+  z-index: -1;
+  clip: rect(44px, 450px, 56px, 0);
+  animation: glitch-anim 5s infinite linear alternate-reverse;
+}
+
+.glitch-text::after {
+  color: #3498db;
+  z-index: -2;
+  clip: rect(44px, 450px, 56px, 0);
+  animation: glitch-anim 5.5s infinite linear alternate-reverse;
+}
+
+@keyframes glitch-anim {
+  0% {
+    clip: rect(31px, 9999px, 94px, 0);
+    transform: skew(0.65deg);
+  }
+  5% {
+    clip: rect(70px, 9999px, 71px, 0);
+    transform: skew(0.8deg);
+  }
+  10% {
+    clip: rect(33px, 9999px, 7px, 0);
+    transform: skew(0.02deg);
+  }
+  15% {
+    clip: rect(42px, 9999px, 26px, 0);
+    transform: skew(0.95deg);
+  }
+  20% {
+    clip: rect(28px, 9999px, 19px, 0);
+    transform: skew(0.72deg);
+  }
+  25% {
+    clip: rect(81px, 9999px, 62px, 0);
+    transform: skew(0.35deg);
+  }
+  30% {
+    clip: rect(95px, 9999px, 59px, 0);
+    transform: skew(0.07deg);
+  }
+  35% {
+    clip: rect(24px, 9999px, 14px, 0);
+    transform: skew(0.86deg);
+  }
+  40% {
+    clip: rect(46px, 9999px, 65px, 0);
+    transform: skew(0.95deg);
+  }
+  45% {
+    clip: rect(72px, 9999px, 92px, 0);
+    transform: skew(0.2deg);
+  }
+  50% {
+    clip: rect(27px, 9999px, 22px, 0);
+    transform: skew(0.57deg);
+  }
+  55% {
+    clip: rect(71px, 9999px, 46px, 0);
+    transform: skew(0.95deg);
+  }
+  60% {
+    clip: rect(86px, 9999px, 17px, 0);
+    transform: skew(0.09deg);
+  }
+  65% {
+    clip: rect(65px, 9999px, 16px, 0);
+    transform: skew(0.44deg);
+  }
+  70% {
+    clip: rect(81px, 9999px, 38px, 0);
+    transform: skew(0.77deg);
+  }
+  75% {
+    clip: rect(31px, 9999px, 33px, 0);
+    transform: skew(0.51deg);
+  }
+  80% {
+    clip: rect(88px, 9999px, 99px, 0);
+    transform: skew(0.34deg);
+  }
+  85% {
+    clip: rect(62px, 9999px, 29px, 0);
+    transform: skew(0.17deg);
+  }
+  90% {
+    clip: rect(53px, 9999px, 55px, 0);
+    transform: skew(0.11deg);
+  }
+  95% {
+    clip: rect(40px, 9999px, 86px, 0);
+    transform: skew(0.02deg);
+  }
+  100% {
+    clip: rect(10px, 9999px, 98px, 0);
+    transform: skew(0.47deg);
+  }
+}
+
+/* Fade text effect */
+.fade-text {
+  animation: text-fade 8s infinite;
+}
+
+@keyframes text-fade {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* Different expand styles */
+.narramorph-inline-expansion {
+  color: #555;
+  font-style: italic;
+  display: inline;
+  opacity: 0;
+  transform: translateY(5px);
+  transition: opacity 0.7s ease, transform 0.7s ease;
+}
+
+.narramorph-expanded .narramorph-inline-expansion {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.narramorph-paragraph-expansion {
+  display: block;
+  max-height: 0;
+  overflow: hidden;
+  margin-top: 0;
+  padding: 0;
+  color: #555;
+  border-left: 3px solid #ddd;
+  background: rgba(0, 0, 0, 0.02);
+  transition: all 1s ease;
+}
+
+.narramorph-expanded .narramorph-paragraph-expansion {
+  max-height: 300px;
+  margin-top: 1em;
+  padding: 0.5em 1em;
+}
+
+.narramorph-reveal-expansion {
+  display: inline-block;
+  position: relative;
+  color: transparent;
+  background: linear-gradient(90deg, #eee, #f5f5f5);
+  border-radius: 2px;
+  padding: 0 4px;
+  transition: all 0.7s ease;
+}
+
+.narramorph-expanded .narramorph-reveal-expansion {
+  color: inherit;
+  background: transparent;
+}
+
 /* Meta comment transformation styles */
 .narramorph-transform-metaComment {
   position: relative;
@@ -119,6 +334,99 @@
 .narramorph-commented .narramorph-comment {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* Footnote style */
+.narramorph-footnote-marker {
+  color: #3a7ca5;
+  cursor: pointer;
+  text-decoration: none;
+  font-size: 0.8em;
+  vertical-align: super;
+}
+
+.narramorph-footnotes {
+  margin-top: 2em;
+  padding-top: 1em;
+  border-top: 1px solid #ddd;
+  font-size: 0.9em;
+  color: #555;
+}
+
+.narramorph-footnote {
+  margin: 0.5em 0;
+  line-height: 1.4;
+  padding-left: 1.5em;
+  text-indent: -1.5em;
+}
+
+/* Marginalia style */
+.narramorph-marginalia-container {
+  position: relative;
+  display: inline-block;
+}
+
+.narramorph-marginalia {
+  position: absolute;
+  right: -15em;
+  width: 14em;
+  top: 0;
+  font-size: 0.8em;
+  color: #555;
+  font-style: italic;
+  text-align: left;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  border-left: 2px solid #ddd;
+  padding-left: 0.5em;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.narramorph-marginalia-container:hover .narramorph-marginalia {
+  opacity: 1;
+}
+
+/* Interlinear style */
+.narramorph-interlinear-container {
+  display: inline-block;
+  position: relative;
+}
+
+.narramorph-interlinear {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -1.5em;
+  font-size: 0.75em;
+  color: #777;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.narramorph-interlinear-container:hover .narramorph-interlinear {
+  opacity: 1;
+}
+
+/* Fragment styles */
+.narramorph-fragment-word {
+  word-spacing: 1.5em;
+}
+
+.narramorph-fragment-progressive {
+  letter-spacing: 0.05em;
+  word-spacing: 0.2em;
+  background: linear-gradient(90deg,
+    rgba(255, 255, 255, 1) 0%,
+    rgba(245, 245, 245, 1) 60%,
+    rgba(240, 240, 240, 1) 100%);
+}
+
+.narramorph-fragment-random {
+  text-align: justify;
+  background: linear-gradient(90deg,
+    rgba(249, 249, 249, 1) 0%,
+    rgba(252, 252, 252, 1) 100%);
 }
 
 /* Entrance animations for newly transformed content */
