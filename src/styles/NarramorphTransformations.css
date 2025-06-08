@@ -756,3 +756,21 @@
 .narramorph-content[data-transformations-count="6"] {
   transition: all 1s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
+
+/* Explicit visibility styling to ensure content remains visible */
+.narramorph-content {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.3s ease;
+}
+
+.narramorph-content.is-visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+.narramorph-content.not-visible {
+  /* Even when not in viewport, keep content visible but slightly faded */
+  opacity: 0.95;
+  visibility: visible;
+}

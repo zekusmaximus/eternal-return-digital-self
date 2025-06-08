@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MiniConstellation Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #121212;
+      color: #f0f0f0;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+    }
+    .test-container {
+      background-color: #1e1e1e;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      width: 80%;
+      max-width: 800px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    h1 {
+      color: #4f8cf7;
+      margin-bottom: 20px;
+    }
+    .description {
+      margin-bottom: 30px;
+      text-align: center;
+      line-height: 1.6;
+    }
+    .mini-map {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      background-color: #0a0a0a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 30px;
+      position: relative;
+      overflow: hidden;
+    }
+    .button-container {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    button {
+      background-color: #4f8cf7;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    button:hover {
+      background-color: #3a7ce0;
+    }
+    .results {
+      margin-top: 20px;
+      width: 100%;
+      padding: 15px;
+      background-color: #252525;
+      border-radius: 4px;
+      font-family: monospace;
+      white-space: pre-wrap;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="test-container">
+    <h1>MiniConstellation Component Test</h1>
+    <div class="description">
+      This page tests the MiniConstellation component to verify that:
+      <ul>
+        <li>The constellation fits entirely within the circular container</li>
+        <li>The rotation is restricted to only the Z-axis</li>
+        <li>You cannot pull the constellation in or out (no zoom)</li>
+      </ul>
+    </div>
+    
+    <div class="mini-map" id="mini-map-container">
+      <!-- The MiniConstellation component will be loaded here -->
+      <div style="color: #888;">Loading...</div>
+    </div>
+    
+    <div class="button-container">
+      <button id="test-button">Test Component</button>
+      <button id="open-app">Open Main App</button>
+    </div>
+    
+    <div class="results" id="results">
+      > Test results will appear here
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('test-button').addEventListener('click', function() {
+      const resultsElement = document.getElementById('results');
+      resultsElement.textContent = "> Testing MiniConstellation component...\n";
+      resultsElement.textContent += "> Launching main application to view component in context\n";
+      
+      // Add instructions for manual testing
+      resultsElement.textContent += "\n> Manual Test Instructions:\n";
+      resultsElement.textContent += "1. Click 'Open Main App'\n";
+      resultsElement.textContent += "2. Click any node in the constellation\n";
+      resultsElement.textContent += "3. Observe the minimap in the top-right corner\n";
+      resultsElement.textContent += "4. Try to rotate it and verify it only rotates on Z axis\n";
+      resultsElement.textContent += "5. Try to zoom in/out and verify it's not possible\n";
+    });
+    
+    document.getElementById('open-app').addEventListener('click', function() {
+      window.open('http://localhost:5173/', '_blank');
+    });
+  </script>
+</body>
+</html>

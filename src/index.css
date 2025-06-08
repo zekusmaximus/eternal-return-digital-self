@@ -62,3 +62,138 @@
     width: 100%;
     height: 100vh;
   }
+  
+  /* Loading spinner animation */
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  
+  /* Pulsating animation for loading elements */
+  @keyframes pulse {
+    0% { opacity: 0.3; }
+    50% { opacity: 0.8; }
+    100% { opacity: 0.3; }
+  }
+  
+  /* Loading styles for lazy-loaded components */
+  .loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    border-top: 4px solid #ffffff;
+    animation: spin 1s linear infinite;
+    margin: 20px auto;
+  }
+  
+  .root-loading {
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background-color: #010409;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .loading-message {
+    text-align: center;
+    z-index: 10;
+    padding: 2rem;
+    background-color: rgba(0, 0, 0, 0.5);
+    border-radius: 10px;
+    backdrop-filter: blur(5px);
+  }
+  
+  .loading-message h1 {
+    margin-bottom: 1.5rem;
+    font-size: 2rem;
+    color: #ffffff;
+  }
+  
+  .loading-message p {
+    color: rgba(255, 255, 255, 0.7);
+    margin-top: 1rem;
+  }
+  
+  /* Component-specific loading styles */
+  .constellation-loading {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background-color: #010409;
+  }
+  
+  .content-loading {
+    width: 100%;
+    min-height: 200px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 5px;
+  }
+  
+  .side-component-loading {
+    width: 100%;
+    height: 100%;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 5px;
+    animation: pulse 2s infinite ease-in-out;
+  }
+  
+  /* Stars background (same as in App.css) */
+  .stars-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+  
+  .stars, .stars2, .stars3 {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: 100%;
+    background-image:
+      radial-gradient(2px 2px at 20px 30px, #eee, rgba(0,0,0,0)),
+      radial-gradient(2px 2px at 40px 70px, #fff, rgba(0,0,0,0)),
+      radial-gradient(1px 1px at 90px 40px, #fff, rgba(0,0,0,0));
+    background-repeat: repeat;
+    z-index: 1;
+  }
+  
+  .stars {
+    background-position: 0 0;
+    transform: translateZ(0);
+    animation: moveStars 500s linear infinite;
+  }
+  
+  .stars2 {
+    background-position: 100px 200px;
+    transform: translateZ(0) scale(0.8);
+    animation: moveStars 800s linear infinite;
+  }
+  
+  .stars3 {
+    background-position: 300px 400px;
+    transform: translateZ(0) scale(0.6);
+    animation: moveStars 1000s linear infinite;
+  }
+  
+  @keyframes moveStars {
+    0% { background-position: 0 0; }
+    100% { background-position: 10000px 5000px; }
+  }

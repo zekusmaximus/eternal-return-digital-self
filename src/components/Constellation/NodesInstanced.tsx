@@ -5,6 +5,7 @@ import {
   selectHoveredNodeId,
   selectSelectedNodeId,
   nodeSelected,
+  setViewMode,
 } from '../../store/slices/interfaceSlice';
 import { navigateToNode } from '../../store/slices/readerSlice';
 import { visitNode } from '../../store/slices/nodesSlice';
@@ -152,6 +153,7 @@ interface NodesInstancedProps {
   overrideSelectedNodeId?: string;
   onNodeClick?: (nodeId: string) => void;
   clickableNodeIds?: string[];
+  isMinimap?: boolean; // Flag to indicate if this is used in the minimap
 }
 
 // Define base colors for each triad - match exact character names from nodesSlice.ts
@@ -511,17 +513,28 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
           
         if (shouldUpdate) {
           // Apply subtle noise-based movement - with adaptive amplitude
+          // Calculate noise values
           const nx = noise3D(origPos[0], origPos[1], origPos[2], time * 0.3);
           const ny = noise3D(origPos[0] + 100, origPos[1] + 100, origPos[2] + 100, time * 0.25);
           const nz = noise3D(origPos[0] + 200, origPos[1] + 200, origPos[2] + 200, time * 0.2);
           
-          // CHANGE: Use direct position updates instead of matrix manipulation
-          // This is more compatible and reliable though less performant
-          nodeMesh.position.set(
-            origPos[0] + nx * noiseAmount,
-            origPos[1] + ny * noiseAmount,
-            origPos[2] + nz * noiseAmount
-          );
+          // Check if this is the minimap view
+          if (props.isMinimap) {
+            // For minimap: completely fixed positions - no movement at all
+            // This provides absolute stability for the minimap view
+            nodeMesh.position.set(
+              origPos[0], // Exact original X position - no movement
+              origPos[1], // Exact original Y position - no movement
+              origPos[2]  // Exact original Z position - no movement
+            );
+          } else {
+            // For main view: full 3D movement
+            nodeMesh.position.set(
+              origPos[0] + nx * noiseAmount,
+              origPos[1] + ny * noiseAmount,
+              origPos[2] + nz * noiseAmount
+            );
+          }
           nodeMesh.matrixAutoUpdate = true;
           
           // Update force field position only if it exists and node is important
@@ -627,6 +640,7 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
                   if (selectedNodeId === null) {
                     dispatch(nodeSelected(node.id));
                     dispatch(visitNode(node.id));
+                    dispatch(setViewMode('reading')); // Set view mode to reading
                     dispatch(navigateToNode({
                       nodeId: node.id,
                       character: node.character,
@@ -645,6 +659,7 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
                   if (isConnected) {
                     dispatch(nodeSelected(node.id));
                     dispatch(visitNode(node.id));
+                    dispatch(setViewMode('reading')); // Set view mode to reading
                     dispatch(navigateToNode({
                       nodeId: node.id,
                       character: node.character,

@@ -51,14 +51,22 @@
     flex: 1;
     padding: 0 var(--spacing-lg);
     overflow-y: auto;
+    overflow-x: hidden;
     position: relative;
+    width: 100%;
   }
   
   .content-container {
     max-width: 800px;
+    width: 100%;
     margin: 0 auto;
     padding-bottom: var(--spacing-xl);
     color: var(--text-color); /* Ensure text color is set consistently */
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+    overflow: visible;
+    position: relative;
+    box-sizing: border-box;
   }
   
   /* Override grayscale filter in unvisited state to avoid visual inconsistencies */
@@ -181,13 +189,14 @@
     position: fixed;
     bottom: var(--spacing-lg);
     right: var(--spacing-lg);
-    width: 200px;
-    height: 200px;
-    background-color: rgba(0, 0, 0, 0.3);
+    width: 140px;
+    height: 140px;
+    background-color: rgba(0, 0, 0, 0.5);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: 50%;
     z-index: 100;
     overflow: hidden;
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
   }
   
   /* Loading state */
@@ -292,8 +301,8 @@
     }
     
     .mini-constellation {
-      width: 150px;
-      height: 150px;
+      width: 120px;
+      height: 120px;
     }
     
     .marginalia-sidebar {
@@ -321,9 +330,94 @@
     }
     
     .mini-constellation {
-      width: 120px;
-      height: 120px;
+      width: 100px;
+      height: 100px;
       bottom: var(--spacing-md);
       right: var(--spacing-md);
     }
   }
+  
+/* Force visibility styles to prevent content from disappearing */
+.force-visible {
+  visibility: visible !important;
+  display: block !important;
+  opacity: 1 !important;
+  position: relative !important;
+  z-index: 10 !important;
+}
+
+.force-visible * {
+  visibility: visible !important;
+  opacity: 1 !important;
+  position: relative !important;
+}
+
+/* Debug indicator improvements */
+.debug-indicator {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: flex;
+  gap: 5px;
+  background-color: rgba(0, 0, 0, 0.2);
+  padding: 3px;
+  border-radius: 3px;
+  z-index: 1000;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.status-green {
+  background-color: #00aa00;
+}
+
+.status-yellow {
+  background-color: #aaaa00;
+}
+
+.status-red {
+  background-color: #aa0000;
+}
+
+.status-blue {
+  background-color: #0066cc;
+}
+
+/* Simple node renderer styles */
+.simple-node-content {
+  margin: 0 auto;
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--text-color);
+}
+
+.simple-node-content h1,
+.simple-node-content h2,
+.simple-node-content h3 {
+  color: var(--node-primary);
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+}
+
+.simple-node-content p {
+  margin-bottom: 1em;
+}
+
+.simple-node-content code {
+  background-color: rgba(0, 0, 0, 0.1);
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: var(--font-monospace);
+}
+
+.simple-node-content pre {
+  background-color: rgba(0, 0, 0, 0.2);
+  padding: 1em;
+  border-radius: 4px;
+  overflow: auto;
+  font-family: var(--font-monospace);
+}

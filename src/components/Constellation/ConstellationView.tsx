@@ -1,21 +1,78 @@
-import { useSelector } from 'react-redux';
-import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Stars } from '@react-three/drei';
+import { useSelector, useDispatch } from 'react-redux';
 import { selectConstellationNodes, selectConnections } from '../../store/slices/nodesSlice';
-import { NodesInstanced } from './NodesInstanced';
+import { setViewMode } from '../../store/slices/interfaceSlice';
 import './ConstellationView.css';
-import { useMemo, useRef, useCallback, useState, useEffect } from 'react';
-import ConnectionsBatched from './ConnectionsBatched';
-import { InstancedMesh, Color } from 'three';
-import { EffectComposer, Bloom } from '@react-three/postprocessing';
-import { useFrame } from '@react-three/fiber';
+import { useMemo, useRef, lazy, Suspense, useState, useEffect } from 'react';
+import { InstancedMesh } from 'three';
+import * as THREE from 'three';
+import { Connection } from '../../types';
+import { webGLContextManager } from '../../services/WebGLContextManager';
+import { viewManager } from '../../services/ViewManager';
+
+// Dynamically import Three.js related dependencies
+// Use explicit path with extension to help TypeScript
+const ThreeJSComponents = lazy(() => import('./ThreeJSComponents.tsx'));
+
+// Loading component for Suspense fallback
+const ConstellationLoading = () => (
+  <div className="constellation-loading">
+    <div className="loading-spinner"></div>
+    <p>Generating constellation view...</p>
+  </div>
+);
+
+// WebGL error notification component
+const WebGLErrorNotification = ({ onDismiss }: { onDismiss: () => void }) => {
+  return (
+    <div className="webgl-error-container">
+      <div className="webgl-error-header">WebGL Error Detected</div>
+      <div className="webgl-error-message">
+        A graphics rendering error occurred. This may affect the constellation display.
+        You can continue using the application in text-only mode.
+      </div>
+      <div className="webgl-error-actions">
+        <button className="webgl-error-action" onClick={onDismiss}>
+          Continue in Text Mode
+        </button>
+      </div>
+    </div>
+  );
+};
 
 const ConstellationView = () => {
+  const dispatch = useDispatch();
+  const [webGLError, setWebGLError] = useState<Error | null>(null);
   const nodes = useSelector(selectConstellationNodes);
   const connections = useSelector(selectConnections);
   const instancedMeshRef = useRef<InstancedMesh>(null!);
+  const [contextId, setContextId] = useState<string | null>(null);
+  
+  // Register this component with ViewManager
+  useEffect(() => {
+    viewManager.registerViewMount('constellation', true);
+    
+    return () => {
+      // Inform ViewManager when unmounting
+      viewManager.registerViewMount('constellation', false);
+      
+      // Make sure to clean up WebGL context when unmounting
+      if (contextId) {
+        console.log(`[ConstellationView] Unmounting, disposing WebGL context: ${contextId}`);
+        webGLContextManager.disposeContext(contextId);
+      }
+    };
+  }, [contextId]);
 
-  const mappedConnections = useMemo(() => connections.map(c => ({ source: c.start, target: c.end })), [connections]);
+  // Create formatted connections for ThreeJSComponents
+  // Convert from {start, end} format to {source, target} format
+  const mappedConnections = useMemo(() =>
+    connections.map(c => ({ source: c.start, target: c.end })),
+  [connections]);
+  
+  // Create Connection objects with correct types for ThreeJSComponents
+  const connectionObjects = useMemo(() =>
+    connections.map(c => ({ source: c.start, target: c.end } as Connection)),
+  [connections]);
 
   const nodePositions = useMemo(() => {
     // Debug
@@ -47,164 +104,91 @@ const ConstellationView = () => {
       const z = Math.sin(phi) * r * radius;
       
       positions[node.id] = [x, y * radius, z];
-      console.log(`Node ${index} (${node.id}) position:`, [x, y * radius, z]);
     });
     
     return positions;
   }, [nodes]);
 
+  // Handle WebGL context registration
+  const handleWebGLContextCreated = (renderer: THREE.WebGLRenderer) => {
+    // Register with the WebGL context manager
+    const id = webGLContextManager.registerContext(
+      renderer,
+      'constellation',
+      2, // High priority
+      // Suspend function
+      () => {
+        console.log('[ConstellationView] Suspending WebGL rendering');
+        // Logic to pause rendering or reduce frame rate
+      },
+      // Resume function
+      () => {
+        console.log('[ConstellationView] Resuming WebGL rendering');
+        // Logic to resume normal rendering
+      }
+    );
+    
+    setContextId(id);
+    console.log(`[ConstellationView] Registered WebGL context: ${id}`);
+  };
+
+  // Listen for application-wide WebGL context loss events
+  useEffect(() => {
+    const handleContextLoss = (event: CustomEvent) => {
+      const { contextId: lostContextId, type } = event.detail;
+      
+      // Only handle if this matches our context or is constellation type
+      if (contextId === lostContextId || type === 'constellation') {
+        console.error("[ConstellationView] Received WebGL context loss event");
+        setWebGLError(new Error("WebGL context lost - application event"));
+      }
+    };
+    
+    // Add event listener for context loss
+    window.addEventListener(
+      'webgl-context-loss',
+      handleContextLoss as EventListener
+    );
+    
+    return () => {
+      window.removeEventListener(
+        'webgl-context-loss',
+        handleContextLoss as EventListener
+      );
+    };
+  }, [contextId]);
+
   return (
     <div className="constellation-container">
-      <Canvas
-        camera={{ position: [0, 0, 40], fov: 35 }} // Increased FOV for wider view
-        gl={{
-          powerPreference: "high-performance",
-          antialias: false, // Disable antialiasing to improve performance
-          precision: "mediump", // Use medium precision to save resources
-          logarithmicDepthBuffer: false, // Disable for better performance
-          stencil: false // Disable stencil buffer when not needed
-        }}
-        performance={{ min: 0.5 }} // Allow frame rate to drop to improve stability
-        frameloop="always" // Changed from "demand" to ensure consistent rendering
-        dpr={[0.8, 1.5]} // Automatically adjust resolution based on device performance
-      >
-        {/* Enhanced lighting setup for better visual effects */}
-        <color attach="background" args={[0x020209]} />
-        <fog attach="fog" args={[0x020209, 30, 80]} />
-        
-        {/* Stars background - further optimized with reduced count and adaptive visibility */}
-        <AdaptiveStars />
-        
-        {/* Ambient light for overall scene illumination */}
-        <ambientLight intensity={0.2} />
-        
-        {/* Main directional light */}
-        <directionalLight
-          position={[10, 10, 10]}
-          intensity={0.8}
-          color={new Color(0xffffff)}
-        />
-        
-        {/* Additional point lights for atmosphere */}
-        <pointLight
-          position={[0, 10, 0]}
-          intensity={0.5}
-          color={new Color(0x8866ff)}
-        />
-        <pointLight
-          position={[-10, -10, -10]}
-          intensity={0.3}
-          color={new Color(0x6688ff)}
-        />
-        
-        {/* Constellation components */}
-        {/* Explicitly pass separate refs to avoid sharing ref issues */}
-        <NodesInstanced
-          ref={instancedMeshRef}
+      <Suspense fallback={<ConstellationLoading />}>
+        <ThreeJSComponents
           nodes={nodes}
           nodePositions={nodePositions}
-          connections={connections}
+          connections={connectionObjects}
+          mappedConnections={mappedConnections}
+          instancedMeshRef={instancedMeshRef}
+          onWebGLContextCreated={handleWebGLContextCreated}
+          onWebGLError={(error) => {
+            console.error("[ConstellationView] WebGL error reported:", error);
+            setWebGLError(error);
+          }}
         />
-        <ConnectionsBatched
-          // No longer passing ref here since ConnectionsBatched doesn't use it
-          connections={mappedConnections}
-          nodePositions={nodePositions}
+      </Suspense>
+      
+      {/* Show WebGL error notification when an error occurs */}
+      {webGLError && (
+        <WebGLErrorNotification
+          onDismiss={() => {
+            // Switch to reading mode to avoid WebGL rendering
+            dispatch(setViewMode('reading'));
+            setWebGLError(null);
+          }}
         />
-        
-        {/* Post-processing effects - conditionally rendered based on performance */}
-        <OptimizedEffects />
-        
-        {/* Camera controls */}
-        <OrbitControls
-          enableDamping
-          dampingFactor={0.05}
-          rotateSpeed={0.5}
-          minDistance={12} // Reduced min distance to allow closer view
-          maxDistance={80} // Increased max distance for wider view
-        />
-      </Canvas>
+      )}
     </div>
   );
 };
 
-// Performance-optimized stars component that adapts based on device capabilities
-const AdaptiveStars = () => {
-  // Reference to track current frame rate
-  const frameRateRef = useRef<{ value: number; samples: number[] }>({ value: 60, samples: [] });
-  
-  // Dynamically adjust star count based on performance
-  const updateFrameRate = useCallback((fps: number) => {
-    frameRateRef.current.samples.push(fps);
-    
-    // Keep only the last 10 samples
-    if (frameRateRef.current.samples.length > 10) {
-      frameRateRef.current.samples.shift();
-    }
-    
-    // Calculate average frame rate
-    const sum = frameRateRef.current.samples.reduce((a, b) => a + b, 0);
-    frameRateRef.current.value = sum / frameRateRef.current.samples.length;
-  }, []);
-  
-  // Monitor frame rate
-  useFrame((state) => {
-    updateFrameRate(state.clock.getDelta() * 1000);
-  });
-  
-  // Dynamic stars based on performance
-  const starCount = useMemo(() => {
-    const fps = frameRateRef.current.value;
-    // Reduce star count when frame rate drops
-    if (fps < 30) return 1000;
-    if (fps < 45) return 1500;
-    return 2000;
-  }, []); // No dependencies needed as we're using ref value that's updated outside of React's lifecycle
-  
-  return (
-    <Stars
-      radius={50}
-      depth={25}
-      count={starCount}
-      factor={3}
-      saturation={0.2}
-      fade
-      speed={0.3}
-    />
-  );
-};
-
-// Conditionally rendered post-processing effects based on device performance
-const OptimizedEffects = () => {
-  // Use high-quality effects only on powerful devices
-  const [useHighQuality, setUseHighQuality] = useState(false);
-  
-  // Check device capabilities on mount
-  useEffect(() => {
-    // Simple detection based on GPU info from WebGL context
-    const canvas = document.createElement('canvas');
-    const gl = canvas.getContext('webgl');
-    
-    if (gl) {
-      const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-      const renderer = debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : '';
-      
-      // Enable high quality on devices with powerful GPUs (simple heuristic)
-      const isHighEnd = /(nvidia|amd|radeon)/i.test(renderer);
-      setUseHighQuality(isHighEnd);
-    }
-  }, []);
-  
-  return (
-    <EffectComposer multisampling={0}>
-      <Bloom
-        intensity={0.6}
-        luminanceThreshold={0.3}
-        luminanceSmoothing={0.7}
-        radius={useHighQuality ? 0.5 : 0.3}
-        mipmapBlur={useHighQuality}
-      />
-    </EffectComposer>
-  );
-};
+// Component has been refactored to integrate with WebGLContextManager and ViewManager
 
 export default ConstellationView;

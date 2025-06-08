@@ -1,0 +1,112 @@
+/* Error Boundary Styles */
+.fallback-content {
+  padding: 20px;
+  border: 1px solid #ffdddd;
+  border-radius: 8px;
+  background-color: #fff8f8;
+  margin: 10px 0;
+}
+
+.error-notice {
+  color: #cc3333;
+  font-weight: bold;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #ffcccc;
+}
+
+/* Debug Indicators */
+.debug-indicator {
+  display: flex;
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  background-color: rgba(0, 0, 0, 0.6);
+  border-radius: 12px;
+  padding: 4px 8px;
+  z-index: 9999;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin: 0 3px;
+  transition: background-color 0.3s ease;
+}
+
+.status-green {
+  background-color: #4CAF50;
+}
+
+.status-yellow {
+  background-color: #FFC107;
+}
+
+.status-red {
+  background-color: #F44336;
+}
+
+/* Visibility Classes */
+.is-visible {
+  opacity: 1 !important;
+  visibility: visible !important;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.is-hidden {
+  opacity: 0.3;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+/* WebGL Error State */
+.narramorph-error {
+  padding: 15px;
+  border-left: 4px solid #ff4444;
+  background-color: rgba(255, 68, 68, 0.1);
+  margin: 10px 0;
+}
+
+/* WebGL context loss error container */
+.webgl-error-container {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  padding: 10px 15px;
+  background-color: rgba(0, 0, 0, 0.8);
+  color: white;
+  border-radius: 5px;
+  z-index: 9999;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  border-left: 4px solid #ff4444;
+}
+
+.webgl-error-header {
+  font-weight: bold;
+  margin-bottom: 8px;
+  color: #ff4444;
+}
+
+.webgl-error-message {
+  font-size: 0.9em;
+  margin-bottom: 8px;
+}
+
+.webgl-error-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.webgl-error-action {
+  background-color: #333;
+  color: white;
+  border: none;
+  border-radius: 3px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.webgl-error-action:hover {
+  background-color: #555;
+}

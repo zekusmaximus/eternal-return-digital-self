@@ -26,6 +26,7 @@ import { transformationService } from '../../services/TransformationService';
 
 interface NarramorphRendererProps {
   nodeId?: string; // Optional - if not provided, uses current node
+  onVisibilityChange?: (isVisible: boolean) => void; // Callback for visibility changes
 }
 
 interface PerformanceMetrics {
@@ -38,7 +39,7 @@ interface PerformanceMetrics {
 
 
 // Main NarramorphRenderer component with React.memo for better performance
-const NarramorphRenderer: React.FC<NarramorphRendererProps> = memo(({ nodeId }) => {
+const NarramorphRenderer: React.FC<NarramorphRendererProps> = memo(({ nodeId, onVisibilityChange }) => {
   const {
     node,
     transformedContent,
@@ -48,8 +49,15 @@ const NarramorphRenderer: React.FC<NarramorphRendererProps> = memo(({ nodeId }) 
   
   const contentRef = useRef<HTMLDivElement>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
+  const lastLogTimestamp = useRef<number | null>(null);
+  // Enhanced throttling: track both timestamp and count of visibility changes
+  const lastVisibilityChangeRef = useRef<number>(Date.now());
+  const visibilityChangeCountRef = useRef<number>(0);
+  // Store previous visibility state for validation
+  const previousVisibilityRef = useRef<boolean>(true);
   const [renderKey, setRenderKey] = useState(0);
-  const [isVisible, setIsVisible] = useState(false);
+  const [isVisible, setIsVisible] = useState(true);
+  const [webGLError, setWebGLError] = useState<Error | null>(null);
   
   // Performance metrics
   const [metrics, setMetrics] = useState<PerformanceMetrics>({
@@ -65,53 +73,168 @@ const NarramorphRenderer: React.FC<NarramorphRendererProps> = memo(({ nodeId }) 
   // Get reading path from reader state
   const readingPath = useSelector((state: RootState) => state.reader.path);
   
-  // Setup intersection observer for visibility detection
+  // Effect to monitor for WebGL context loss errors
   useEffect(() => {
-    if (!contentRef.current) return;
+    const handleWebGLError = (event: ErrorEvent) => {
+      // Check if this is a WebGL context loss error
+      if (event.message &&
+         (event.message.includes('WebGL context lost') ||
+          event.message.includes('THREE.WebGLRenderer'))) {
+        console.error('[NarramorphRenderer] WebGL context loss detected!', event.message);
+        setWebGLError(new Error(event.message));
+      }
+    };
+    
+    window.addEventListener('error', handleWebGLError);
+    
+    return () => {
+      window.removeEventListener('error', handleWebGLError);
+    };
+  }, []);
+
+  // Setup intersection observer for visibility detection with guaranteed initial visibility
+  useEffect(() => {
+    if (!contentRef.current) {
+      return;
+    }
     
     // Clean up previous observer
     if (observerRef.current) {
       observerRef.current.disconnect();
+      observerRef.current = null;
     }
     
-    // Create new observer
+    // Set initial visibility only when node changes
+    if (!observerRef.current) {
+      setIsVisible(true);
+      if (onVisibilityChange) {
+        onVisibilityChange(true);
+      }
+    }
+    
+    // Create observer with enhanced debouncing to prevent too many updates
+    let visibilityTimeout: number | null = null;
+    let validationTimeout: number | null = null;
+    
     observerRef.current = new IntersectionObserver(
       (entries) => {
-        const isNowVisible = entries[0]?.isIntersecting ?? false;
+        const isNowVisible = entries[0]?.isIntersecting ?? true;
+        const now = Date.now();
         
-        if (isVisible !== isNowVisible) {
-          setIsVisible(isNowVisible);
-          setMetrics(prev => ({
-            ...prev,
-            visibilityChanges: prev.visibilityChanges + 1
-          }));
-          
-          // Inform the transformation service about visibility changes
-          if (node?.id) {
-            transformationService.setContentVisibility(
-              node.id,
-              isNowVisible,
-              // Prioritize currently selected node
-              node.id === nodeId ? 2 : 1
-            );
+        // Store previous visibility for validation
+        previousVisibilityRef.current = isVisible;
+        
+        // Enhanced throttling with multiple validation checks
+        // 1. Visibility must have truly changed
+        // 2. Sufficient time must have passed since last change (2 seconds minimum)
+        // 3. Cannot have more than 5 visibility changes in 10 seconds
+        const timeSinceLastChange = now - lastVisibilityChangeRef.current;
+        const tooManyChanges = visibilityChangeCountRef.current > 5 && timeSinceLastChange < 10000;
+        
+        if (isVisible !== isNowVisible &&
+            contentRef.current &&
+            timeSinceLastChange > 2000 && // Increased from 1s to 2s
+            !tooManyChanges) {
+            
+          // Cancel any pending visibility updates
+          if (visibilityTimeout) {
+            window.clearTimeout(visibilityTimeout);
           }
+          if (validationTimeout) {
+            window.clearTimeout(validationTimeout);
+          }
+          
+          // Log potential visibility change
+          console.log(`[NarramorphRenderer] Potential visibility change detected: ${isVisible} -> ${isNowVisible}`);
+          
+          // Use a longer debounce time to prevent rapid cycling (increased from 500ms to 800ms)
+          visibilityTimeout = window.setTimeout(() => {
+            // Double-check that visibility truly changed and element still exists
+            if (isVisible !== isNowVisible &&
+                contentRef.current &&
+                previousVisibilityRef.current === isVisible) {
+                
+              // Schedule final validation check after a short delay
+              validationTimeout = window.setTimeout(() => {
+                // Final verification that visibility state is consistent
+                const finalCheck = entries[0]?.isIntersecting ?? true;
+                if (finalCheck === isNowVisible) {
+                  // Update timestamp and count
+                  lastVisibilityChangeRef.current = Date.now();
+                  visibilityChangeCountRef.current += 1;
+                  
+                  // Update state only after multiple validations
+                  setIsVisible(isNowVisible);
+                  
+                  // Reset change counter after 10 seconds of stability
+                  setTimeout(() => {
+                    visibilityChangeCountRef.current = 0;
+                  }, 10000);
+                  
+                  // Call the visibility change callback if provided
+                  if (onVisibilityChange) {
+                    console.log("[NarramorphRenderer] Calling onVisibilityChange:", isNowVisible, "Previous:", isVisible);
+                    onVisibilityChange(isNowVisible);
+                  }
+                } else {
+                  console.log("[NarramorphRenderer] Visibility state inconsistent - ignoring change");
+                }
+                validationTimeout = null;
+              }, 300); // Wait 300ms for final validation
+            }
+            
+            setMetrics(prev => ({
+              ...prev,
+              visibilityChanges: prev.visibilityChanges + 1
+            }));
+            
+            // Inform the transformation service about visibility changes
+            // But only after validation checks pass
+            if (node?.id) {
+              transformationService.setContentVisibility(
+                node.id,
+                isNowVisible,
+                node.id === nodeId ? 2 : 1
+              );
+            }
+            
+            // Force a re-render when becoming visible again
+            // But only when state is stable
+            if (isNowVisible) {
+              setRenderKey(prev => prev + 1);
+            }
+            
+            visibilityTimeout = null;
+          }, 800); // Increased debounce time to prevent cascading updates
         }
       },
       {
-        root: null, // viewport
-        rootMargin: '100px', // load slightly before visible
-        threshold: 0.1 // trigger when 10% visible
+        root: null,
+        rootMargin: '500px',
+        threshold: 0.01
       }
     );
     
     // Start observing
-    observerRef.current.observe(contentRef.current);
+    if (contentRef.current) {
+      observerRef.current.observe(contentRef.current);
+    }
     
-    // Cleanup
+    // Enhanced cleanup
     return () => {
+      if (visibilityTimeout) {
+        window.clearTimeout(visibilityTimeout);
+      }
+      if (validationTimeout) {
+        window.clearTimeout(validationTimeout);
+      }
       observerRef.current?.disconnect();
+      observerRef.current = null;
+      
+      // Log disconnection for debugging
+      console.log('[NarramorphRenderer] Intersection observer disconnected');
     };
-  }, [node?.id, nodeId, isVisible]);
+  }, [node?.id, nodeId, onVisibilityChange, isVisible]); // Added isVisible to satisfy exhaustive deps rule
   
   // Prioritize transformations based on visibility and importance
   const prioritizedTransformations = useMemo(() => {
@@ -272,14 +395,46 @@ const NarramorphRenderer: React.FC<NarramorphRendererProps> = memo(({ nodeId }) 
   }, [node?.id]);
   
   
+  // Show error state if WebGL context was lost
+  if (webGLError) {
+    console.error('[NarramorphRenderer] Rendering in error state due to WebGL issue');
+    return (
+      <div className="narramorph-error">
+        <p>Advanced rendering unavailable</p>
+        <div dangerouslySetInnerHTML={{ __html: node?.currentContent || 'Content unavailable' }} />
+      </div>
+    );
+  }
+  
   // Show loading state if content isn't available
   if (!node || !transformedContent) {
+    // No longer logging this repeatedly
     return <div className="narramorph-loading">Loading content...</div>;
   }
   
-  // Render the transformed content with animation container
+  // Render the transformed content with animation container and enhanced visibility tracking
+  // Only log in development mode
+  if (process.env.NODE_ENV === 'development') {
+    // Limit logging frequency with a timestamp check
+    const now = Date.now();
+    if (!lastLogTimestamp.current || now - lastLogTimestamp.current > 5000) {
+      console.log(`[NarramorphRenderer] Rendering content for node: ${node.id}, visible: ${isVisible}`);
+      lastLogTimestamp.current = now;
+    }
+  }
   return (
-    <div className="narramorph-container" key={renderKey}>
+    <div
+      className={`narramorph-container ${isVisible ? 'is-visible' : 'is-hidden'}`}
+      key={renderKey}
+      data-node-id={node.id}
+      data-visibility={isVisible ? 'visible' : 'hidden'}
+      style={{
+        display: 'block',
+        visibility: 'visible',
+        position: 'relative',
+        minHeight: '200px'
+      }}
+    >
       <TransformationAnimationContainer
         transformations={prioritizedTransformations}
         isNewlyTransformed={newlyTransformed}
@@ -287,13 +442,34 @@ const NarramorphRenderer: React.FC<NarramorphRendererProps> = memo(({ nodeId }) 
       >
         <div
           ref={contentRef}
-          className={`narramorph-content ${isVisible ? 'is-visible' : 'not-visible'}`}
+          className={`narramorph-content ${isVisible ? 'is-visible' : 'is-hidden'}`}
           data-transformations-count={prioritizedTransformations.length}
           data-node-id={node.id}
           data-visit-count={node.visitCount}
+          style={{
+            display: 'block',
+            visibility: 'visible',
+            position: 'relative'
+          }}
         >
+          {/* Show loading indicator before content is ready */}
+          {!transformedContent && (
+            <div className="narramorph-loading-indicator" style={{margin: '20px 0'}}>
+              <div className="loading-spinner"></div>
+              <p>Preparing narrative transformations...</p>
+            </div>
+          )}
+          
           {/* Render content directly without virtualization */}
-          <div dangerouslySetInnerHTML={{ __html: transformedContent || '' }} />
+          {transformedContent && (
+            <div
+              dangerouslySetInnerHTML={{ __html: transformedContent }}
+              style={{
+                opacity: isVisible ? 1 : 0.99, // Force visibility while maintaining transitions
+                transition: 'opacity 0.3s ease-in'
+              }}
+            />
+          )}
         </div>
       </TransformationAnimationContainer>
       

@@ -66,12 +66,25 @@ const ConnectionsBatched = forwardRef<InstancedMesh, ConnectionsBatchedProps>(
     // This is a proper use of the ref parameter required by forwardRef
     React.useImperativeHandle(ref, () => null!);
   const geometryRef = useRef<BufferGeometry>(null!);
-  const selectedNodeId = useAppSelector((state) => state.interface.selectedNodeId);
-  // We're not using instancedMeshRef or nodeIndexMap anymore since we're using direct positions
-
+  
+  // Use refs directly instead of direct Redux state access to break circular dependency
+  const selectedNodeIdRef = useRef<string | null>(null);
+  const hoveredNodeIdRef = useRef<string | null>(null);
+  
+  // Create a one-time selector to get values initially and update refs
+  const getInterfaceState = useAppSelector(state => state.interface);
+  
+  // Update refs when Redux state changes but don't cause re-renders
+  useEffect(() => {
+    selectedNodeIdRef.current = getInterfaceState.selectedNodeId;
+  }, [getInterfaceState.selectedNodeId]);
+  
+  useEffect(() => {
+    hoveredNodeIdRef.current = getInterfaceState.hoveredNodeId;
+  }, [getInterfaceState.hoveredNodeId]);
+  
   // Create a reference for the custom shader material
   const connectionMaterialRef = useRef<THREE.ShaderMaterial>(null);
-  const hoveredNodeId = useAppSelector(state => state.interface.hoveredNodeId);
 
   const { positions, colors, lineCount } = useMemo(() => {
     const positions = new Float32Array(connections.length * 2 * 3);
@@ -86,8 +99,9 @@ const ConnectionsBatched = forwardRef<InstancedMesh, ConnectionsBatchedProps>(
         positions.set(startNodePos, lineCount * 6);
         positions.set(endNodePos, lineCount * 6 + 3);
 
-        const isSelected = selectedNodeId === connection.source || selectedNodeId === connection.target;
-        const isHovered = hoveredNodeId === connection.source || hoveredNodeId === connection.target;
+        // Access values from refs directly without creating dependencies
+        const isSelected = selectedNodeIdRef.current === connection.source || selectedNodeIdRef.current === connection.target;
+        const isHovered = hoveredNodeIdRef.current === connection.source || hoveredNodeIdRef.current === connection.target;
         
         // Enhanced color logic
         let color;
@@ -106,7 +120,7 @@ const ConnectionsBatched = forwardRef<InstancedMesh, ConnectionsBatchedProps>(
       }
     }
     return { positions, colors, lineCount };
-  }, [connections, nodePositions, selectedNodeId, hoveredNodeId]);
+  }, [connections, nodePositions]); // Remove selectedNodeId and hoveredNodeId from deps
 
   useEffect(() => {
     console.log("ConnectionsBatched initializing geometry with:", {
@@ -191,11 +205,15 @@ const ConnectionsBatched = forwardRef<InstancedMesh, ConnectionsBatchedProps>(
         }
         
         // Check if this connection needs immediate color update (selected/hovered)
-        const isSelected = selectedNodeId === connection.source || selectedNodeId === connection.target;
-        const isHovered = hoveredNodeId === connection.source || hoveredNodeId === connection.target;
+        // Access values directly from refs - this won't create dependencies
+        const isSelected = selectedNodeIdRef.current === connection.source || selectedNodeIdRef.current === connection.target;
+        const isHovered = hoveredNodeIdRef.current === connection.source || hoveredNodeIdRef.current === connection.target;
+        
+        // Track if this is a high-priority connection that needs immediate updates
+        const isHighPriorityConnection = isSelected || isHovered;
         
         // Always update colors for selected/hovered connections, otherwise throttle
-        if (isSelected || isHovered || shouldUpdateColors) {
+        if (isHighPriorityConnection || shouldUpdateColors) {
           let color;
           if (isSelected) {
             // Simplified color animation for selected connections
