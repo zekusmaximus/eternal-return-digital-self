@@ -534,7 +534,6 @@ export class TransformationEngine {
         
         // Store pattern in a local variable to prevent TypeScript undefined errors
         const fragmentPattern = transformation.fragmentPattern;
-        console.log('Fragment pattern:', fragmentPattern);
         
         // Handle different fragmentation patterns
         const fragmentStyle = transformation.fragmentStyle || 'character';
@@ -562,17 +561,6 @@ export class TransformationEngine {
               const fragmentCount = Math.floor(index / (chars.length / 5)) + 1;
               return char + fragmentPattern.repeat(fragmentCount);
             }).join('');
-            break;
-          }
-            
-          case 'random': {
-            // Randomly insert fragments
-            const words = transformation.selector.split(' ');
-            fragmentedText = words.map(word => {
-              return Math.random() > 0.5 ?
-                `${word} ${fragmentPattern}` :
-                word;
-            }).join(' ');
             break;
           }
             

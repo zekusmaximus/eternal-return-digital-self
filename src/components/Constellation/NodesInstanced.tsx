@@ -429,8 +429,14 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
           updateFrequency = 1.0;
         }
         
-        // Only update position based on update frequency
-        if (Math.random() < updateFrequency) {
+        // Deterministic update frequency based on frame count instead of random
+        // This is more predictable and avoids using Math.random() for security reasons
+        const shouldUpdate =
+          updateFrequency >= 1.0 || // Always update high priority nodes
+          (updateFrequency >= 0.5 && frameCount.current % 2 === 0) || // Update medium priority every 2nd frame
+          (updateFrequency >= 0.25 && frameCount.current % 4 === 0);  // Update low priority every 4th frame
+          
+        if (shouldUpdate) {
           // Apply subtle noise-based movement - with adaptive amplitude
           const nx = noise3D(origPos[0], origPos[1], origPos[2], time * 0.3);
           const ny = noise3D(origPos[0] + 100, origPos[1] + 100, origPos[2] + 100, time * 0.25);

@@ -78,7 +78,6 @@ export class TransformationPriorityQueue {
   // Lazy evaluation settings
   private readonly LAZY_BATCH_SIZE = 5; // Process 5 transformations per batch
   private readonly LAZY_BATCH_INTERVAL = 50; // 50ms between batches
-  private readonly VISIBILITY_THRESHOLD = 0.1; // 10% visibility required
   
   /**
    * Generate a hash for a transformation
