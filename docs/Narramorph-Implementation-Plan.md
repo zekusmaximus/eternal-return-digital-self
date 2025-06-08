@@ -53,7 +53,7 @@ export interface NarramorphContent {
 
 export interface NodeState extends Node {
   visitCount: number;
-  lastVisitTimestamp: number;
+  // Time-based features removed (2025-06-08)
   currentState: NodeVisualState;
   revealedConnections: string[];
   transformations: TransformationRule[];
@@ -88,7 +88,7 @@ visitNode: (state, action: PayloadAction<string>) => {
 
   if (node) {
     node.visitCount += 1;
-    node.lastVisitTimestamp = Date.now();
+    // Time-based tracking removed (2025-06-08)
 
     // ... existing currentState logic
 

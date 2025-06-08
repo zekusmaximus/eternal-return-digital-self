@@ -157,9 +157,8 @@ export class NarramorphIntegration {
         };
         
       case 'rhythm':
-        return pattern.description.includes('fast')
-          ? { minTimeSpentInNode: 0 } // No minimum for fast rhythm
-          : { minTimeSpentInNode: 60000 }; // 1 minute minimum for deep engagement
+        // Time-based conditions removed
+        return {};
         
       case 'thematic':
         return {
@@ -220,22 +219,7 @@ export class NarramorphIntegration {
         break;
         
       case 'rhythm':
-        // For rhythm patterns, adapt content density
-        if (pattern.description.includes('fast')) {
-          // For fast skimmers, highlight key points
-          transformations.push({
-            type: 'emphasize',
-            selector: 'key',
-            emphasis: 'bold'
-          });
-        } else {
-          // For deep readers, expand content
-          transformations.push({
-            type: 'expand',
-            selector: 'meaning',
-            replacement: 'deeper significance'
-          });
-        }
+        // Rhythm-based transformations removed (previously time-based)
         break;
         
       case 'thematic':

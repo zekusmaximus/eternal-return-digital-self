@@ -21,20 +21,15 @@ export interface ReaderState { // Add 'export' here
   previousNodeId: string | null;
   endpointProgress: Record<EndpointOrientation, number>;
   attractorEngagement: Record<StrangeAttractor, number>;
-  sessionStartTime: number;
-  totalReadingTime: number;
+  // Time-based properties removed (2025-06-08)
 }
 
 
-// Duration thresholds for reading rhythm analysis (in milliseconds)
-export const FAST_TRANSITION_THRESHOLD = 30000; // 30 seconds
-export const DEEP_ENGAGEMENT_THRESHOLD = 120000; // 2 minutes
+// Removed time-based threshold constants
 
 // Initial state for the reader's path
 const initialReadingPath: ReadingPath = {
   sequence: [],
-  timestamps: {},
-  durations: {},
   revisitPatterns: {},
   attractorsEngaged: {} as Record<StrangeAttractor, number>,
   
@@ -43,10 +38,6 @@ const initialReadingPath: ReadingPath = {
   transitions: [],
   characterFocus: {} as Record<Character, number>,
   temporalLayerFocus: {} as Record<TemporalLabel, number>,
-  readingRhythm: {
-    fastTransitions: 0,
-    deepEngagements: 0
-  },
   patternSequences: {
     repeatedSequences: [],
     characterSequences: [],
@@ -64,9 +55,8 @@ const initialState: ReaderState = {
     present: 0,
     future: 0
   },
-  attractorEngagement: {} as Record<StrangeAttractor, number>,
-  sessionStartTime: Date.now(),
-  totalReadingTime: 0
+  attractorEngagement: {} as Record<StrangeAttractor, number>
+  // Time-based properties removed (2025-06-08)
 };
 
 // Create the reader slice
@@ -82,35 +72,15 @@ const readerSlice = createSlice({
       attractors: StrangeAttractor[];
     }>) => {
       const { nodeId, character, temporalValue } = action.payload;
-      const now = Date.now();
       const temporalLayer = getTemporalLabel(temporalValue);
       
-      // Calculate visit duration for previous node
-      let duration = 0;
+      // Record transition without time-based properties
       if (state.currentNodeId) {
-        duration = now - (state.path.timestamps[state.currentNodeId] || now);
-        state.path.durations[state.currentNodeId] =
-          (state.path.durations[state.currentNodeId] || 0) + duration;
-        
-        // Update reading rhythm analysis
-        if (duration < FAST_TRANSITION_THRESHOLD) {
-          if (!state.path.readingRhythm) {
-            state.path.readingRhythm = { fastTransitions: 0, deepEngagements: 0 };
-          }
-          state.path.readingRhythm.fastTransitions++;
-        } else if (duration > DEEP_ENGAGEMENT_THRESHOLD) {
-          if (!state.path.readingRhythm) {
-            state.path.readingRhythm = { fastTransitions: 0, deepEngagements: 0 };
-          }
-          state.path.readingRhythm.deepEngagements++;
-        }
         
         // Create transition record
         const transition: NodeTransition = {
           from: state.currentNodeId,
           to: nodeId,
-          timestamp: now,
-          duration,
           attractorsEngaged: [] as StrangeAttractor[]  // Will be populated by engageAttractor action
         };
         if (!state.path.transitions) {
@@ -126,9 +96,6 @@ const readerSlice = createSlice({
       
       // Add to sequence
       state.path.sequence.push(nodeId);
-      
-      // Record timestamp
-      state.path.timestamps[nodeId] = now;
       
       // Track revisit pattern
       const revisitCount = (state.path.revisitPatterns[nodeId] || 0) + 1;
@@ -148,8 +115,6 @@ const readerSlice = createSlice({
       // Create detailed visit record
       const visit: NodeVisit = {
         nodeId,
-        timestamp: now,
-        duration: 0,  // Will be updated on next navigation
         character,
         temporalLayer,
         engagedAttractors: [] as StrangeAttractor[],  // Will be populated by engageAttractor action
@@ -220,12 +185,7 @@ const readerSlice = createSlice({
       state.endpointProgress[orientation] = Math.min(100, Math.max(0, value));
     },
     
-    // Calculate and update total reading time
-    updateReadingTime: (state) => {
-      const now = Date.now();
-      state.totalReadingTime += now - state.sessionStartTime;
-      state.sessionStartTime = now;
-    },
+    // Time-based tracking removed (2025-06-08)
     
     // Reset the reader's state (for testing)
     resetReader: (state) => {
@@ -238,8 +198,7 @@ const readerSlice = createSlice({
         future: 0
       };
       state.attractorEngagement = {} as Record<StrangeAttractor, number>;
-      state.sessionStartTime = Date.now();
-      state.totalReadingTime = 0;
+      // Time-based properties removed (2025-06-08)
     },
     
     // Analyze the reader's path for patterns
@@ -294,34 +253,17 @@ const readerSlice = createSlice({
       // Temporal layer patterns are already tracked in patternSequences.temporalSequences
     },
     
-    // Update detailed visit duration for current node
-    updateCurrentVisitDuration: (state) => {
-      if (state.currentNodeId && state.path.detailedVisits && state.path.detailedVisits.length > 0) {
-        const now = Date.now();
-        const lastVisit = state.path.detailedVisits[state.path.detailedVisits.length - 1];
-        
-        if (lastVisit.nodeId === state.currentNodeId) {
-          const duration = now - lastVisit.timestamp;
-          lastVisit.duration = duration;
-          
-          // Also update the durations record
-          state.path.durations[state.currentNodeId] =
-            (state.path.durations[state.currentNodeId] || 0) + duration;
-        }
-      }
-    }
+    // Removed time-based duration update reducer
   }
 });
 
 // Export actions
-export const { 
-  navigateToNode, 
-  engageAttractor, 
+export const {
+  navigateToNode,
+  engageAttractor,
   updateEndpointProgress,
-  updateReadingTime,
   resetReader,
-  analyzePatterns,
-  updateCurrentVisitDuration
+  analyzePatterns
 } = readerSlice.actions;
 
 // Export selector functions
@@ -363,11 +305,7 @@ export const selectNodeRevisitCount = (state: { reader: ReaderState }, nodeId: s
   return state.reader.path.revisitPatterns[nodeId] || 0;
 };
 
-export const selectTotalReadingTime = (state: { reader: ReaderState }) => {
-  // Calculate current session time + stored total
-  const currentSessionTime = Date.now() - state.reader.sessionStartTime;
-  return state.reader.totalReadingTime + currentSessionTime;
-};
+// Time-based selectors removed (2025-06-08)
 
 // New selectors for enhanced path tracking
 
@@ -383,8 +321,7 @@ export const selectCharacterFocus = (state: { reader: ReaderState }) =>
 export const selectTemporalLayerFocus = (state: { reader: ReaderState }) =>
   state.reader.path.temporalLayerFocus;
 
-export const selectReadingRhythm = (state: { reader: ReaderState }) =>
-  state.reader.path.readingRhythm;
+// Reading rhythm selector removed (2025-06-08)
 
 export const selectRepeatedSequences = (state: { reader: ReaderState }) =>
   state.reader.path.patternSequences?.repeatedSequences || [];
@@ -424,25 +361,22 @@ export const selectMostFrequentTransitions = (state: { reader: ReaderState }, co
 export const selectMostEngagingNodes = (state: { reader: ReaderState }, count: number = 3) => {
   const detailedVisits = state.reader.path.detailedVisits || [];
   
-  // Group by nodeId and calculate average duration
+  // Group by nodeId and count visits
   const nodeEngagement = detailedVisits.reduce((engagement, visit) => {
     if (!engagement[visit.nodeId]) {
-      engagement[visit.nodeId] = { totalDuration: 0, visits: 0 };
+      engagement[visit.nodeId] = { visits: 0 };
     }
-    engagement[visit.nodeId].totalDuration += visit.duration;
     engagement[visit.nodeId].visits += 1;
     return engagement;
-  }, {} as Record<string, { totalDuration: number, visits: number }>);
+  }, {} as Record<string, { visits: number }>);
   
-  // Calculate average durations and sort
+  // Sort by visit count
   return Object.entries(nodeEngagement)
     .map(([nodeId, data]) => ({
       nodeId,
-      averageDuration: data.totalDuration / data.visits,
-      totalDuration: data.totalDuration,
       visitCount: data.visits
     }))
-    .sort((a, b) => b.averageDuration - a.averageDuration)
+    .sort((a, b) => b.visitCount - a.visitCount)
     .slice(0, count);
 };
 

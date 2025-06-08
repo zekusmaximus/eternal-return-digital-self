@@ -72,10 +72,6 @@ export interface TransformationCondition {
   // Temporal position requirement (past, present, future)
   temporalPosition?: TemporalLabel;
   
-  // Time-based conditions
-  minTimeSpentInNode?: number; // Minimum time spent in current node (ms)
-  totalReadingTime?: number;   // Minimum total reading time (ms)
-  
   // Endpoint progress conditions
   endpointProgress?: {
     orientation: EndpointOrientation;
@@ -163,7 +159,6 @@ export interface NarramorphContent {
 
 export interface NodeState extends Node {
   visitCount: number;
-  lastVisitTimestamp: number;
   currentState: NodeVisualState;
   revealedConnections: string[]; // All available connections (initial + revealed)
   transformations: TransformationRule[]; // Applied transformations
@@ -199,8 +194,7 @@ export type Connection = {
 export interface NodeTransition {
   from: string; // Source node ID
   to: string; // Target node ID
-  timestamp: number; // When the transition occurred
-  duration: number; // How long the reader spent on the "from" node
+  // Time-based tracking removed (2025-06-08)
   attractorsEngaged: StrangeAttractor[]; // Which attractors were engaged during this transition
 }
 
@@ -209,8 +203,7 @@ export interface NodeTransition {
  */
 export interface NodeVisit {
   nodeId: string; // ID of the visited node
-  timestamp: number; // When the visit occurred
-  duration: number; // How long the visit lasted
+  // Time-based tracking removed (2025-06-08)
   character: Character; // Character perspective of the node
   temporalLayer: TemporalLabel; // Temporal layer of the node
   engagedAttractors: StrangeAttractor[]; // Attractors engaged during this visit
@@ -223,8 +216,6 @@ export interface NodeVisit {
  */
 export interface ReadingPath {
   sequence: string[]; // Ordered array of visited node IDs
-  timestamps: Record<string, number>; // Timestamp of each node visit
-  durations: Record<string, number>; // Duration spent on each node
   revisitPatterns: Record<string, number>; // Count of revisits per node
   attractorsEngaged: Record<StrangeAttractor, number>; // Count of engagements with attractors
   
@@ -233,10 +224,7 @@ export interface ReadingPath {
   transitions?: NodeTransition[]; // Detailed information about transitions between nodes
   characterFocus?: Record<Character, number>; // Count of visits to each character's nodes
   temporalLayerFocus?: Record<TemporalLabel, number>; // Count of visits to each temporal layer
-  readingRhythm?: {
-    fastTransitions: number; // Count of transitions under a threshold duration
-    deepEngagements: number; // Count of visits over a threshold duration
-  };
+  // Time-based reading rhythm tracking removed (2025-06-08)
   patternSequences?: {
     repeatedSequences: string[][]; // Sequences of nodes that have been visited more than once
     characterSequences: Character[][]; // Sequences of character perspectives

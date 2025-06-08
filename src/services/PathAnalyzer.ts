@@ -34,8 +34,6 @@ export interface ReadingPattern {
 export interface AttractorEngagement {
   attractor: StrangeAttractor;
   engagementScore: number; // 0-100
-  firstEngagement: number; // timestamp
-  lastEngagement: number; // timestamp
   totalEngagements: number;
   relatedNodes: string[];
   trend: 'rising' | 'falling' | 'stable';
@@ -50,8 +48,7 @@ export interface PatternBasedCondition {
     visitPattern?: string[];
     characters?: Character[];
     temporalPosition?: TemporalLabel;
-    minTimeSpentInNode?: number;
-    totalReadingTime?: number;
+    // Time-based properties removed (2025-06-08)
     strangeAttractorsEngaged?: StrangeAttractor[];
   };
   strength: number;
@@ -102,8 +99,8 @@ export class PathAnalyzer {
     // 3. Analyze temporal layer patterns
     patterns.push(...this.identifyTemporalLayerPatterns(readerState.path));
     
-    // 4. Analyze reading rhythm patterns
-    patterns.push(...this.identifyReadingRhythmPatterns(readerState.path));
+    // 4. Reading rhythm patterns (time-based factors removed)
+    patterns.push(...this.identifyReadingRhythmPatterns());
     
     // 5. Analyze theme/attractor affinity patterns
     patterns.push(...this.identifyAttractorAffinityPatterns(readerState.path, nodes));
@@ -341,96 +338,12 @@ export class PathAnalyzer {
   }
 
   /**
-   * Identifies reading rhythm patterns in the reader's path
+   * Previously contained reading rhythm patterns based on time
+   * Removed as part of refactoring to eliminate time-based factors
    */
-  identifyReadingRhythmPatterns(path: ReadingPath): ReadingPattern[] {
-    const patterns: ReadingPattern[] = [];
-    const readingRhythm = path.readingRhythm;
-    const detailedVisits = path.detailedVisits || [];
-    
-    if (!readingRhythm || detailedVisits.length < 3) {
-      return patterns;
-    }
-    
-    const transitions = path.transitions || [];
-    const totalTransitions = transitions.length;
-    if (totalTransitions === 0) {
-      return patterns;
-    }
-    
-    // Calculate fast transitions ratio using imported constant
-    const fastTransitionsRatio = readingRhythm.fastTransitions / totalTransitions;
-    // This uses transitions under FAST_TRANSITION_THRESHOLD (30000ms)
-    
-    // Calculate deep engagements ratio using imported constant
-    const deepEngagementsRatio = readingRhythm.deepEngagements / detailedVisits.length;
-    // This uses visits over DEEP_ENGAGEMENT_THRESHOLD (120000ms)
-    
-    // Check for skimming pattern (many fast transitions)
-    if (fastTransitionsRatio >= 0.7) {
-      patterns.push({
-        type: 'rhythm',
-        strength: fastTransitionsRatio,
-        description: 'Fast skimming pattern with quick transitions between nodes'
-      });
-    }
-    
-    // Check for deep reading pattern (many long engagements)
-    if (deepEngagementsRatio >= 0.3) {
-      patterns.push({
-        type: 'rhythm',
-        strength: deepEngagementsRatio,
-        description: 'Deep engagement pattern with extended time spent on nodes'
-      });
-    }
-    
-    // Check for inconsistent rhythm (mix of very fast and very slow)
-    if (fastTransitionsRatio >= 0.4 && deepEngagementsRatio >= 0.2) {
-      const inconsistencyStrength = Math.min(fastTransitionsRatio, deepEngagementsRatio) * 2;
-      
-      patterns.push({
-        type: 'rhythm',
-        strength: inconsistencyStrength,
-        description: 'Inconsistent rhythm alternating between fast skimming and deep engagement'
-      });
-    }
-    
-    // Check for acceleration/deceleration patterns
-    if (detailedVisits.length >= 5) {
-      const durations = detailedVisits
-        .filter(visit => visit.duration > 0)
-        .map(visit => visit.duration);
-      
-      if (durations.length >= 5) {
-        let accelerating = true;
-        let decelerating = true;
-        
-        for (let i = 1; i < durations.length; i++) {
-          if (durations[i] >= durations[i-1]) {
-            accelerating = false;
-          }
-          if (durations[i] <= durations[i-1]) {
-            decelerating = false;
-          }
-        }
-        
-        if (accelerating) {
-          patterns.push({
-            type: 'rhythm',
-            strength: 0.8,
-            description: 'Accelerating pattern with progressively shorter node visits'
-          });
-        } else if (decelerating) {
-          patterns.push({
-            type: 'rhythm',
-            strength: 0.8,
-            description: 'Decelerating pattern with progressively longer node visits'
-          });
-        }
-      }
-    }
-    
-    return patterns;
+  identifyReadingRhythmPatterns(): ReadingPattern[] {
+    // Return empty patterns as time-based rhythm detection has been removed
+    return [];
   }
 
   /**
@@ -566,33 +479,21 @@ export class PathAnalyzer {
         return;
       }
       
-      // Get first and last engagement timestamps
-      const firstEngagement = Math.min(...engagementVisits.map(v => v.timestamp));
-      const lastEngagement = Math.max(...engagementVisits.map(v => v.timestamp));
-      
-      // Calculate engagement trend
+      // Set default trend
       let trend: 'rising' | 'falling' | 'stable' = 'stable';
       
+      // Simple trend calculation based on visit index rather than timestamp
       if (engagementVisits.length >= 3) {
-        // Divide visits into first half and second half
+        // Divide visits into first half and second half by visit index
         const midpoint = Math.floor(engagementVisits.length / 2);
         const firstHalf = engagementVisits.slice(0, midpoint);
         const secondHalf = engagementVisits.slice(midpoint);
         
-        // Calculate engagement density in each half
-        const totalTimespan = lastEngagement - firstEngagement;
-        if (totalTimespan > 0) {
-          const firstHalfDensity = firstHalf.length /
-            ((firstHalf[firstHalf.length-1].timestamp - firstHalf[0].timestamp) / totalTimespan);
-          
-          const secondHalfDensity = secondHalf.length /
-            ((secondHalf[secondHalf.length-1].timestamp - secondHalf[0].timestamp) / totalTimespan);
-          
-          if (secondHalfDensity > firstHalfDensity * 1.2) {
-            trend = 'rising';
-          } else if (secondHalfDensity < firstHalfDensity * 0.8) {
-            trend = 'falling';
-          }
+        // Compare counts in first and second half to determine trend
+        if (secondHalf.length > firstHalf.length * 1.2) {
+          trend = 'rising';
+        } else if (secondHalf.length < firstHalf.length * 0.8) {
+          trend = 'falling';
         }
       }
       
@@ -608,38 +509,24 @@ export class PathAnalyzer {
       
       const relativeEngagement = (totalEngagements / totalAllAttractors) * 100;
       
-      // 2. Calculate recency factor
-      const mostRecentTimestamp = Math.max(...detailedVisits.map(v => v.timestamp));
-      const timeSinceLastEngagement = mostRecentTimestamp - lastEngagement;
-      const recencyFactor = Math.max(0, 1 - (timeSinceLastEngagement /
-        (mostRecentTimestamp - firstEngagement)));
+      // 2. Recency factor - using indices instead of timestamps
+      // Check if the engagement appears in recent visits
+      const recencyFactor = detailedVisits.indexOf(engagementVisits[engagementVisits.length - 1]) >
+        detailedVisits.length * 0.7 ? 0.8 : 0.4;
       
-      // 3. Calculate consistency
-      // (Average time between engagements is not used but kept as a comment for future implementation)
-      // const averageTimeBetweenEngagements = engagementVisits.length > 1 ?
-      //   (lastEngagement - firstEngagement) / (engagementVisits.length - 1) : 0;
-      
-      const timeDiffs = [];
-      for (let i = 1; i < engagementVisits.length; i++) {
-        timeDiffs.push(engagementVisits[i].timestamp - engagementVisits[i-1].timestamp);
-      }
-      
-      const consistencyFactor = timeDiffs.length > 0 ?
-        1 - (Math.max(...timeDiffs) - Math.min(...timeDiffs)) /
-          (mostRecentTimestamp - firstEngagement) : 0.5;
+      // 3. Consistency factor - simplified version
+      const consistencyFactor = engagementVisits.length > totalEngagements * 0.5 ? 0.7 : 0.3;
       
       // Calculate final score
       const engagementScore = Math.min(100,
-        (relativeEngagement * 0.5) +
-        (recencyFactor * 30) +
+        (relativeEngagement * 0.6) +
+        (recencyFactor * 20) +
         (consistencyFactor * 20));
       
       // Add to results
       attractorEngagements.push({
         attractor,
         engagementScore,
-        firstEngagement,
-        lastEngagement,
         totalEngagements,
         relatedNodes,
         trend
@@ -721,25 +608,7 @@ export class PathAnalyzer {
           break;
           
         case 'rhythm':
-          // Create conditions based on reading rhythm
-          if (pattern.description.includes('fast')) {
-            conditions.push({
-              type: 'readingRhythm',
-              condition: {
-                minTimeSpentInNode: 0,  // No minimum
-                totalReadingTime: 300000  // At least 5 minutes of reading
-              },
-              strength: pattern.strength
-            });
-          } else if (pattern.description.includes('deep')) {
-            conditions.push({
-              type: 'readingRhythm',
-              condition: {
-                minTimeSpentInNode: 60000  // At least 1 minute on current node
-              },
-              strength: pattern.strength
-            });
-          }
+          // Rhythm-based conditions removed (previously time-based)
           break;
           
         case 'thematic':

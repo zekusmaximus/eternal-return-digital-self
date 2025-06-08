@@ -101,10 +101,6 @@ export interface TransformationCondition {
   // Temporal position requirement (past, present, future)
   temporalPosition?: TemporalLabel;
   
-  // Time-based conditions
-  minTimeSpentInNode?: number; // Minimum time spent in current node (ms)
-  totalReadingTime?: number;   // Minimum total reading time (ms)
-  
   // Endpoint progress conditions
   endpointProgress?: {
     orientation: EndpointOrientation;
@@ -185,12 +181,9 @@ export class TransformationEngine {
     const readerStateHash = JSON.stringify({
       path: {
         sequence: readerState.path.sequence,
-        revisitPatterns: readerState.path.revisitPatterns,
-        // Only include durations for the current node to reduce key size
-        durations: nodeState ? { [nodeState.id]: readerState.path.durations[nodeState.id] } : {}
+        revisitPatterns: readerState.path.revisitPatterns
       },
-      endpointProgress: readerState.endpointProgress,
-      totalReadingTime: readerState.totalReadingTime
+      endpointProgress: readerState.endpointProgress
     });
     
     // Create a minimal node state hash
@@ -331,21 +324,7 @@ export class TransformationEngine {
       }
     }
     
-    // 6. Time-based conditions
-    if (condition.minTimeSpentInNode !== undefined) {
-      const timeSpent = readerState.path.durations[nodeState.id] || 0;
-      if (timeSpent < condition.minTimeSpentInNode) {
-        return false;
-      }
-    }
-    
-    if (condition.totalReadingTime !== undefined) {
-      if (readerState.totalReadingTime < condition.totalReadingTime) {
-        return false;
-      }
-    }
-    
-    // 7. Endpoint progress condition
+    // 6. Endpoint progress condition
     if (condition.endpointProgress) {
       const { orientation, minValue } = condition.endpointProgress;
       if (!readerState.endpointProgress || readerState.endpointProgress[orientation] < minValue) {

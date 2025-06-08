@@ -14,6 +14,7 @@ import {
   RootState,
   StrangeAttractor
 } from '../../types';
+import { ReaderState } from '../slices/readerSlice';
 import { transformationEngine } from '../../services/TransformationEngine';
 
 export interface NodesState { // Add 'export' right here
@@ -251,9 +252,8 @@ const nodesSlice = createSlice({
       const node = state.data[nodeId];
       
       if (node) {
-        // Update visit count and timestamp
+        // Update visit count
         node.visitCount += 1;
-        node.lastVisitTimestamp = Date.now();
         
         // Update node state based on visit count
         if (node.visitCount === 1) {
@@ -354,17 +354,17 @@ const nodesSlice = createSlice({
           };
 
           // Create a complete ReaderState object with required properties
-          const enhancedReaderState = {
-            ...readerState,
+          const enhancedReaderState: ReaderState = {
+            path: readerState.path,
+            currentNodeId: readerState.currentNodeId,
             previousNodeId: readerState.path.sequence.length > 1 ?
               readerState.path.sequence[readerState.path.sequence.length - 2] : null,
+            endpointProgress: readerState.endpointProgress,
             // Merge existing attractor engagements with default values
             attractorEngagement: {
               ...defaultAttractorEngagement,
               ...readerState.path.attractorsEngaged
-            },
-            sessionStartTime: Date.now() - 1000, // Default to 1 second ago
-            totalReadingTime: Object.values(readerState.path.durations).reduce((sum, duration) => sum + duration, 0)
+            }
           };
           
           // Filter transformations that should apply based on conditions
@@ -392,7 +392,6 @@ const nodesSlice = createSlice({
       Object.keys(state.data).forEach(nodeId => {
         const node = state.data[nodeId];
         node.visitCount = 0;
-        node.lastVisitTimestamp = 0;
         node.currentState = 'unvisited';
         node.revealedConnections = [...node.initialConnections];
         node.transformations = [];
@@ -416,7 +415,6 @@ const nodesSlice = createSlice({
         state.data[node.id] = {
           ...node,
           visitCount: 0,
-          lastVisitTimestamp: 0,
           currentState: 'unvisited',
           revealedConnections: [...node.initialConnections],
           transformations: [],

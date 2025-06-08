@@ -12,8 +12,7 @@
 
 import {
   TextTransformation,
-  NodeState,
-  TemporalLabel
+  NodeState
 } from '../types';
 import { ReaderState } from '../store/slices/readerSlice';
 import { transformationEngine } from './TransformationEngine';
@@ -248,43 +247,9 @@ export class TransformationService {
         }
       }
       
-      // Adjust based on temporal focus
-      if (item.sourceType === 'temporal') {
-        const temporalLayer = nodeState.temporalValue <= 3 ? 'past' : 
-                             nodeState.temporalValue <= 6 ? 'present' : 'future';
-                             
-        const temporalFocus = readerState.path.temporalLayerFocus || {} as Record<TemporalLabel, number>;
-        const focusOnThisLayer = temporalFocus[temporalLayer as TemporalLabel] || 0;
-        const totalVisits = Object.values(temporalFocus).reduce((sum: number, val: number) => sum + val, 0);
-        
-        if (totalVisits > 0) {
-          const focusRatio = focusOnThisLayer / totalVisits;
-          if (focusRatio > 0.4) {
-            item.priority += Math.round((focusRatio - 0.4) * 20);
-          }
-        }
-      }
+      // Temporal-based priority adjustments removed
       
-      // Adjust based on reading rhythm
-      if (item.sourceType === 'rhythm') {
-        const rhythm = readerState.path.readingRhythm;
-        if (rhythm) {
-          const { fastTransitions, deepEngagements } = rhythm;
-          const totalTransitions = readerState.path.transitions?.length || 0;
-          
-          if (totalTransitions > 0) {
-            // For fragmenting, increase priority if reader has many fast transitions
-            if (item.transformation.type === 'fragment' && fastTransitions / totalTransitions > 0.6) {
-              item.priority += 10;
-            }
-            
-            // For expanding, increase priority if reader has deep engagements
-            if (item.transformation.type === 'expand' && deepEngagements > 2) {
-              item.priority += 5;
-            }
-          }
-        }
-      }
+      // Reading rhythm priority adjustments removed
     });
     
     return prioritized;
@@ -889,32 +854,7 @@ export class TransformationService {
           break;
           
         case 'readingRhythm':
-          // Reading rhythm affects fragmentation
-          if (condition.strength > 0.6 && nodeState.currentContent) {
-            if (condition.condition.minTimeSpentInNode === 0) {
-              // Fast reading creates fragmentation
-              const paragraphs = nodeState.currentContent.split('\n\n');
-              if (paragraphs.length > 1) {
-                transformations.push({
-                  type: 'fragment',
-                  selector: paragraphs[1],
-                  fragmentPattern: '...',
-                  priority: 'medium'
-                });
-              }
-            } else if (condition.condition.minTimeSpentInNode === 60000) {
-              // Deep reading creates expansion
-              const paragraphs = nodeState.currentContent.split('\n\n');
-              if (paragraphs.length > 0) {
-                transformations.push({
-                  type: 'expand',
-                  selector: paragraphs[0],
-                  replacement: 'Your careful reading reveals deeper layers of meaning.',
-                  priority: 'medium'
-                });
-              }
-            }
-          }
+          // Reading rhythm transformations removed (previously time-based)
           break;
           
         case 'attractorAffinity':

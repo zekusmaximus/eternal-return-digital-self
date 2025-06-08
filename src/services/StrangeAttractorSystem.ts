@@ -350,13 +350,7 @@ export class StrangeAttractorSystem {
       transformationCondition.temporalPosition = condition.temporalPosition;
     }
     
-    if (condition.minTimeSpentInNode !== undefined) {
-      transformationCondition.minTimeSpentInNode = condition.minTimeSpentInNode;
-    }
-    
-    if (condition.totalReadingTime !== undefined) {
-      transformationCondition.totalReadingTime = condition.totalReadingTime;
-    }
+    // Time-based conditions removed (2025-06-08)
     
     if (condition.strangeAttractorsEngaged) {
       transformationCondition.strangeAttractorsEngaged = condition.strangeAttractorsEngaged;
@@ -405,23 +399,13 @@ export class StrangeAttractorSystem {
         break;
         
       case 'readingRhythm':
-        // For rhythm patterns, adapt content density
-        if (patternCondition.condition.minTimeSpentInNode && 
-            patternCondition.condition.minTimeSpentInNode > 0) {
-          // Deep engagement - expand content
-          transformations.push({
-            type: 'expand',
-            selector: 'thought',
-            replacement: 'deeper contemplation'
-          });
-        } else {
-          // Fast skimming - highlight key points
-          transformations.push({
-            type: 'emphasize',
-            selector: 'key',
-            emphasis: 'bold'
-          });
-        }
+        // For rhythm patterns, highlight key points
+        // Note: Time-based condition removed (2025-06-08)
+        transformations.push({
+          type: 'emphasize',
+          selector: 'key',
+          emphasis: 'bold'
+        });
         break;
         
       case 'attractorAffinity':
