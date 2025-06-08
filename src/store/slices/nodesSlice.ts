@@ -215,9 +215,9 @@ export const loadNodeContent = createAsyncThunk(
       const text = await response.text();
 
       const content: NarramorphContent = {};
-      const parts = text.split(/---t\[(\d+)\]/);
+      const parts = text.split(/---\[(\d+)\]/);
 
-      if (parts.length > 0 && !text.startsWith('---t[')) {
+      if (parts.length > 0 && !text.startsWith('---[')) {
           content[0] = parts[0].trim();
       }
 
@@ -271,7 +271,8 @@ const nodesSlice = createSlice({
           const availableCounts = Object.keys(node.content)
             .map(Number)
             .sort((a, b) => b - a); // Sort descending
-          const bestMatch = availableCounts.find(count => node.visitCount >= count);
+          const lookupKey = Math.max(0, node.visitCount - 1);
+          const bestMatch = availableCounts.find(count => lookupKey >= count);
           if (bestMatch !== undefined) {
             // Store the base content (without transformations)
             node.currentContent = node.content[bestMatch];
@@ -323,7 +324,8 @@ const nodesSlice = createSlice({
           .map(Number)
           .sort((a, b) => b - a); // Sort descending
         
-        const bestMatch = availableCounts.find(count => node.visitCount >= count);
+        const lookupKey = Math.max(0, node.visitCount - 1);
+        const bestMatch = availableCounts.find(count => lookupKey >= count);
         if (bestMatch !== undefined) {
           const baseContent = node.content[bestMatch];
           
@@ -441,7 +443,8 @@ const nodesSlice = createSlice({
           const availableCounts = Object.keys(node.content)
               .map(Number)
               .sort((a, b) => b - a); // Sort descending
-          const bestMatch = availableCounts.find(count => node.visitCount >= count);
+          const lookupKey = Math.max(0, node.visitCount - 1);
+          const bestMatch = availableCounts.find(count => lookupKey >= count);
           if (bestMatch !== undefined) {
               node.currentContent = node.content[bestMatch];
           } else {

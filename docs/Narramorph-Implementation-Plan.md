@@ -1,3 +1,7 @@
+---
+**Note (2025-06-08):** This implementation plan has been largely completed. The core Narramorph functionality, including multi-state content based on visit counts and the transformation engine, is now part of the prototype. Some minor deviations from this original plan (such as the exact delimiter used) were made during implementation and have been addressed in the codebase. This document serves as a record of the initial plan.
+---
+
 # Narramorph Implementation Plan
 
 This document outlines the architectural design and implementation plan for the Narramorph feature in the "Eternal Return of the Digital Self" project.
