@@ -56,7 +56,7 @@ const ConstellationView = () => {
   return (
     <div className="constellation-container">
       <Canvas
-        camera={{ position: [0, 0, 40], fov: 30 }}
+        camera={{ position: [0, 0, 40], fov: 35 }} // Increased FOV for wider view
         gl={{
           powerPreference: "high-performance",
           antialias: false, // Disable antialiasing to improve performance
@@ -65,7 +65,7 @@ const ConstellationView = () => {
           stencil: false // Disable stencil buffer when not needed
         }}
         performance={{ min: 0.5 }} // Allow frame rate to drop to improve stability
-        frameloop="demand" // Only render frames when needed - major performance boost
+        frameloop="always" // Changed from "demand" to ensure consistent rendering
         dpr={[0.8, 1.5]} // Automatically adjust resolution based on device performance
       >
         {/* Enhanced lighting setup for better visual effects */}
@@ -119,8 +119,8 @@ const ConstellationView = () => {
           enableDamping
           dampingFactor={0.05}
           rotateSpeed={0.5}
-          minDistance={15}
-          maxDistance={70}
+          minDistance={12} // Reduced min distance to allow closer view
+          maxDistance={80} // Increased max distance for wider view
         />
       </Canvas>
     </div>

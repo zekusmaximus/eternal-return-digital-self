@@ -178,6 +178,8 @@ const ConnectionsBatched = forwardRef<InstancedMesh, ConnectionsBatchedProps>(
         const endPos = nodePositions[connection.target];
         
         if (!startPos || !endPos) {
+          // Safety check for missing node positions - log for debugging
+          console.warn(`ConnectionsBatched: Missing position for connection ${connection.source} -> ${connection.target}`);
           continue; // Skip if positions aren't available
         }
         
@@ -244,6 +246,13 @@ const ConnectionsBatched = forwardRef<InstancedMesh, ConnectionsBatchedProps>(
       }
     }
   }, []);
+
+  // Always ensure lineCount is correct
+  useEffect(() => {
+    if (geometryRef.current && lineCount > 0) {
+      geometryRef.current.setDrawRange(0, lineCount * 2);
+    }
+  }, [lineCount]);
 
   return (
     <lineSegments ref={lineSegmentsRef} frustumCulled={false}>

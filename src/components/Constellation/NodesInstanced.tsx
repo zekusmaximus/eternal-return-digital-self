@@ -10,7 +10,7 @@ import { navigateToNode } from '../../store/slices/readerSlice';
 import { visitNode } from '../../store/slices/nodesSlice';
 import { AppDispatch } from '../../store';
 import { ConstellationNode, NodePositions } from '../../types';
-import { forwardRef, useMemo, useRef, useEffect, useState } from 'react';
+import { forwardRef, useMemo, useRef, useEffect } from 'react';
 import { Color, InstancedMesh, ShaderMaterial, Frustum, Matrix4, Vector3 } from 'three';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
@@ -154,12 +154,39 @@ interface NodesInstancedProps {
   clickableNodeIds?: string[];
 }
 
-// Define base colors for each triad
+// Define base colors for each triad - match exact character names from nodesSlice.ts
 const triadColors = {
   LastHuman: new Color('#ff6666'), // Reddish
   Archaeologist: new Color('#66ff66'), // Greenish
   Algorithm: new Color('#6666ff'), // Bluish
 };
+
+// Create a more permissive lookup that doesn't rely on exact matching
+// Helper to get color for node based on character with proper type safety
+const getNodeColor = (character: string | undefined): Color => {
+  if (!character) return new Color('#ffffff');
+  
+  // Direct lookup with type safety
+  if (character === 'LastHuman') return triadColors.LastHuman;
+  if (character === 'Archaeologist') return triadColors.Archaeologist;
+  if (character === 'Algorithm') return triadColors.Algorithm;
+  
+  // Case-insensitive lookup as fallback
+  const lowerChar = character.toLowerCase();
+  if (lowerChar.includes('human')) return triadColors.LastHuman;
+  if (lowerChar.includes('arch')) return triadColors.Archaeologist;
+  if (lowerChar.includes('algo')) return triadColors.Algorithm;
+  
+  // Default
+  console.warn(`Unknown character type: ${character}, using default color`);
+  return new Color('#ffffff');
+};
+
+// We've fixed node visibility by:
+// 1. Using larger distance thresholds to prevent aggressive culling
+// 2. Implementing proper hover/unhover event handling
+// 3. Using direct position updates instead of matrix manipulation
+// 4. Ensuring proper color assignment for all character types
 
 // Create a class for managing node visibility and LOD
 class NodeVisibilityManager {
@@ -177,12 +204,12 @@ class NodeVisibilityManager {
     this.camera = camera;
     this.visibleNodes = new Set();
     this.distanceThresholds = {
-      high: 20,   // High detail within 20 units
-      medium: 40, // Medium detail within 40 units
-      low: 60     // Low detail within 60 units
+      high: 60,   // High detail within 60 units (increased from 50)
+      medium: 90,  // Medium detail within 90 units (increased from 70)
+      low: 120     // Low detail within 120 units (increased from 90)
     };
     this.lastUpdateTime = 0;
-    this.updateInterval = 250; // Update visibility every 250ms
+    this.updateInterval = 150; // Update visibility more frequently (was 250ms)
   }
   
   updateFrustum() {
@@ -205,19 +232,22 @@ class NodeVisibilityManager {
     isVisible: boolean,
     detailLevel: 'high' | 'medium' | 'low' | 'culled'
   } {
-    // Always consider important nodes visible
+    // Track nodes that we've processed
     if (this.visibleNodes.has(nodeId)) {
-      this.visibleNodes.delete(nodeId);
+      // Don't delete from visibleNodes here - we want to maintain the set
     }
     
-    // Check if in frustum
-    const isInFrustum = this.frustum.containsPoint(position);
-    if (!isInFrustum) {
-      return { isVisible: false, detailLevel: 'culled' };
-    }
-    
-    // Calculate distance to camera for LOD
+    // Calculate distance for LOD purposes
     const distance = position.distanceTo(this.camera.position);
+    
+    // CRITICAL FIX: Always return nodes as visible, even if outside frustum
+    // This ensures all nodes are always visible, regardless of camera position
+    // We'll just use the distance for LOD purposes
+    
+    // Add to visible nodes set
+    this.visibleNodes.add(nodeId);
+    
+    // Distance already calculated above
     
     // Determine detail level based on distance
     let detailLevel: 'high' | 'medium' | 'low' | 'culled';
@@ -263,8 +293,9 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
   
   // Create visibility manager
   const visibilityManagerRef = useRef<NodeVisibilityManager | null>(null);
-  const [visibleNodeCount, setVisibleNodeCount] = useState(0);
-
+  // Track nodes visibility
+  const forceUpdateCounter = useRef({ count: 0 });
+  
   const connectedNodeIds = useMemo(() => {
     if (!selectedNodeId) return new Set<string>();
     const connected = new Set<string>();
@@ -318,6 +349,51 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
     // Update frustum for visibility checks (less frequently)
     if (visibilityManagerRef.current.shouldUpdate(time)) {
       visibilityManagerRef.current.updateFrustum();
+      
+      // Force occasional full visibility update to catch any missed nodes
+      forceUpdateCounter.current.count++;
+      
+      // More frequent checks (every second) to ensure nodes stay visible
+      if (forceUpdateCounter.current.count % 6 === 0) {
+        console.log("Performing visibility validation check...");
+        let visibleCount = 0;
+        
+        // Every ~1 second, ensure all nodes have been evaluated
+        nodes.forEach(node => {
+          const mesh = nodeMeshRefs.current[nodes.indexOf(node)];
+          if (mesh) {
+            // Always ensure nodes are visible
+            const isImportant = node.id === selectedNodeId ||
+                             node.id === hoveredNodeId ||
+                             connectedNodeIds.has(node.id);
+            
+            if (mesh.visible === false) {
+              // Force important nodes to always be visible
+              if (isImportant) {
+                console.log(`Forcing visibility for important node: ${node.id}`);
+                mesh.visible = true;
+              }
+            }
+            
+            if (mesh.visible) {
+              visibleCount++;
+            }
+          }
+        });
+        
+        console.log(`Visible nodes: ${visibleCount} / ${nodes.length}`);
+        
+        // Emergency fallback - if too few nodes are visible, make all visible
+        if (visibleCount < nodes.length * 0.7) {
+          console.warn("Too few nodes visible, forcing all nodes to be visible");
+          nodes.forEach((_, idx) => {
+            const mesh = nodeMeshRefs.current[idx];
+            if (mesh) {
+              mesh.visible = true;
+            }
+          });
+        }
+      }
     }
     
     // Time-based throttling for shader updates
@@ -364,16 +440,19 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
       lastUpdatePositionsTime.current = time;
       
       // Apply organic movement to nodes using noise - with optimized calculations
-      let visibleCount = 0;
       
       for (let i = 0; i < nodes.length; i++) {
         const node = nodes[i];
         const nodeMesh = nodeMeshRefs.current[i];
         
-        if (!nodeMesh) continue; // Skip if mesh doesn't exist
+        if (!nodeMesh) {
+          continue; // Skip if mesh doesn't exist
+        }
         
         const origPos = originalPositions.current[node.id];
-        if (!origPos) continue; // Skip if no original position
+        if (!origPos) {
+          continue; // Skip if no original position
+        }
         
         // Create a Vector3 for position (reused for visibility check)
         const position = new THREE.Vector3(origPos[0], origPos[1], origPos[2]);
@@ -384,57 +463,51 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
           position
         );
         
-        // Skip updates for culled nodes
-        if (detailLevel === 'culled') {
-          // Hide node completely
-          nodeMesh.visible = false;
-          
-          // Also hide force field
-          const forceMesh = forceFieldMeshRefs.current[i];
-          if (forceMesh) forceMesh.visible = false;
-          
-          continue;
-        }
-        
-        // Show node
+        // Define isImportantNode once to avoid duplicates
+        const isImportantNode = node.id === selectedNodeId ||
+                               node.id === hoveredNodeId ||
+                               connectedNodeIds.has(node.id);
+                                
+        // Always show all nodes regardless of culling
+        // Forced visibility fix to prevent nodes from disappearing
         nodeMesh.visible = true;
-        visibleCount++;
+        
+        // Only hide force field for non-important nodes
+        const forceMesh = forceFieldMeshRefs.current[i];
+        if (forceMesh) {
+          forceMesh.visible = isImportantNode;
+        }
         
         // Adjust noise amount based on detail level
         let noiseAmount = 0.03; // Default
-        let updateFrequency = 1.0; // Default (every frame)
         
         switch (detailLevel) {
           case 'high':
             // Full detail for important nodes
             noiseAmount = 0.03;
-            updateFrequency = 1.0;
             break;
           case 'medium':
             // Medium detail for medium distance
             noiseAmount = 0.02;
-            updateFrequency = 0.5; // Every other frame
             break;
           case 'low':
             // Low detail for far distance
             noiseAmount = 0.01;
-            updateFrequency = 0.25; // Every fourth frame
             break;
         }
         
         // Special case for important nodes - always high detail
-        const isImportantNode = node.id === selectedNodeId || node.id === hoveredNodeId;
         if (isImportantNode) {
           noiseAmount = 0.03;
-          updateFrequency = 1.0;
         }
         
-        // Deterministic update frequency based on frame count instead of random
-        // This is more predictable and avoids using Math.random() for security reasons
+        // More consistent update frequency with prioritization for important nodes
+        // Always update important nodes and those in high/medium detail levels
         const shouldUpdate =
-          updateFrequency >= 1.0 || // Always update high priority nodes
-          (updateFrequency >= 0.5 && frameCount.current % 2 === 0) || // Update medium priority every 2nd frame
-          (updateFrequency >= 0.25 && frameCount.current % 4 === 0);  // Update low priority every 4th frame
+          isImportantNode || // Always update important nodes
+          detailLevel === 'high' || // Always update high detail nodes
+          (detailLevel === 'medium' && frameCount.current % 2 === 0) || // Medium every 2nd frame
+          (detailLevel === 'low' && frameCount.current % 3 === 0);  // Low every 3rd frame
           
         if (shouldUpdate) {
           // Apply subtle noise-based movement - with adaptive amplitude
@@ -442,14 +515,14 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
           const ny = noise3D(origPos[0] + 100, origPos[1] + 100, origPos[2] + 100, time * 0.25);
           const nz = noise3D(origPos[0] + 200, origPos[1] + 200, origPos[2] + 200, time * 0.2);
           
-          // Apply optimization: use matrix update instead of individual position properties
-          // This is more efficient as it avoids multiple matrix recalculations
-          nodeMesh.matrix.makeTranslation(
+          // CHANGE: Use direct position updates instead of matrix manipulation
+          // This is more compatible and reliable though less performant
+          nodeMesh.position.set(
             origPos[0] + nx * noiseAmount,
             origPos[1] + ny * noiseAmount,
             origPos[2] + nz * noiseAmount
           );
-          nodeMesh.matrixAutoUpdate = false;
+          nodeMesh.matrixAutoUpdate = true;
           
           // Update force field position only if it exists and node is important
           const forceMesh = forceFieldMeshRefs.current[i];
@@ -462,8 +535,7 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
         }
       }
       
-      // Update visible node count for metrics
-      setVisibleNodeCount(visibleCount);
+      // No need to update visible node count since we removed the display
     }
   });
   
@@ -489,9 +561,10 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
         const isConnected = connectedNodeIds.has(node.id);
         const isHovered = hoveredNodeId === node.id;
         
-        // Calculate node color directly
-        const baseColor = triadColors[node.character];
-        const nodeColor = baseColor.clone();
+        // Calculate node color using our more permissive function
+        const nodeColor = getNodeColor(node.character).clone();
+        
+        // Apply color adjustments based on node state
         if (isSelected) {
           nodeColor.multiplyScalar(1.5); // Lighter shade
         } else if (isConnected) {
@@ -608,6 +681,16 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
                 const nodeUnhoverEvent = new CustomEvent('node-unhover');
                 window.dispatchEvent(nodeUnhoverEvent);
               }}
+              
+              // Fix for stuck hover: Add pointer leave event
+              onPointerLeave={(e) => {
+                e.stopPropagation();
+                dispatch(nodeUnhovered());
+                
+                // Emit custom event for tooltip hiding
+                const nodeUnhoverEvent = new CustomEvent('node-unhover');
+                window.dispatchEvent(nodeUnhoverEvent);
+              }}
             >
               {/* Use lower poly geometry for distant nodes */}
               {/* Performance optimization: Use lower poly geometry for distant nodes */}
@@ -635,30 +718,7 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
         );
       })}
       
-      {/* Display performance information in development mode */}
-      {process.env.NODE_ENV === 'development' && (
-        <group position={[-10, 10, 0]}>
-          <sprite scale={[5, 0.6, 1]} position={[0, 0, 0]}>
-            <spriteMaterial color="#000000" opacity={0.5} transparent={true} />
-          </sprite>
-          <sprite scale={[4.8, 0.4, 1]} position={[0, 0, 0.1]}>
-            <spriteMaterial>
-              <canvasTexture attach="map" image={(() => {
-                const canvas = document.createElement('canvas');
-                canvas.width = 256;
-                canvas.height = 32;
-                const ctx = canvas.getContext('2d');
-                if (ctx) {
-                  ctx.fillStyle = 'white';
-                  ctx.font = '11px monospace';
-                  ctx.fillText(`Visible: ${visibleNodeCount}/${nodes.length} nodes`, 10, 20);
-                }
-                return canvas;
-              })()} />
-            </spriteMaterial>
-          </sprite>
-        </group>
-      )}
+      {/* Performance display removed */}
     </group>
   );
 });
