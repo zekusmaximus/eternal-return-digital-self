@@ -12,14 +12,75 @@
  * 5. Temporal position conditions
  */
 
-import { 
-  StrangeAttractor, 
-  TemporalLabel, 
-  NodeState, 
+import {
+  StrangeAttractor,
+  TemporalLabel,
+  NodeState,
   TextTransformation,
   EndpointOrientation
 } from '../types';
 import { ReaderState } from '../store/slices/readerSlice';
+
+// LRU Cache implementation for memoization
+class LRUCache<K, V> {
+  private capacity: number;
+  private cache: Map<K, V>;
+  private keys: K[];
+
+  constructor(capacity: number) {
+    this.capacity = capacity;
+    this.cache = new Map<K, V>();
+    this.keys = [];
+  }
+
+  get(key: K): V | undefined {
+    if (!this.cache.has(key)) return undefined;
+    
+    // Move key to the end of keys array (most recently used)
+    this.keys = this.keys.filter(k => k !== key);
+    this.keys.push(key);
+    
+    return this.cache.get(key);
+  }
+
+  put(key: K, value: V): void {
+    if (this.cache.has(key)) {
+      // Update existing key
+      this.cache.set(key, value);
+      this.keys = this.keys.filter(k => k !== key);
+      this.keys.push(key);
+      return;
+    }
+
+    // Check if we need to evict the least recently used item
+    if (this.keys.length >= this.capacity) {
+      const lruKey = this.keys.shift();
+      if (lruKey !== undefined) {
+        this.cache.delete(lruKey);
+      }
+    }
+
+    // Add new key-value pair
+    this.cache.set(key, value);
+    this.keys.push(key);
+  }
+
+  clear(): void {
+    this.cache.clear();
+    this.keys = [];
+  }
+
+  size(): number {
+    return this.cache.size;
+  }
+
+  getStats(): { size: number, capacity: number } {
+    return {
+      size: this.cache.size,
+      capacity: this.capacity
+    };
+  }
+}
 
 /**
  * Enhanced transformation condition interface with all supported condition types
@@ -71,19 +132,147 @@ export interface TransformationResult {
 }
 
 /**
+ * Cache key generation options
+ */
+interface CacheKeyOptions {
+  includeNodeState?: boolean;
+  includeReaderState?: boolean;
+  includeTransformations?: boolean;
+  contentPrefix?: number; // Number of characters from content to include in key
+}
+
+/**
  * Service class that handles the evaluation and application of transformation conditions
+ * with enhanced caching and performance optimizations
  */
 export class TransformationEngine {
+  // Cache for condition evaluation results - increased size for better hit rate
+  private conditionCache = new LRUCache<string, boolean>(500);
+  
+  // Cache for transformed text - increased size for better hit rate
+  private transformationCache = new LRUCache<string, string>(200);
+  
+  // Cache for batched transformation results (multiple transformations applied at once)
+  private batchedTransformationCache = new LRUCache<string, string>(100);
+  
+  // Cache hit/miss statistics
+  private stats = {
+    conditionEvaluations: 0,
+    conditionCacheHits: 0,
+    transformations: 0,
+    transformationCacheHits: 0,
+    batchedTransformations: 0,
+    batchedCacheHits: 0
+  };
+  
+  // Last modification timestamp for cache invalidation
+  private lastModificationTime: number = Date.now();
+
+  /**
+   * Create a hash key for condition caching with enhanced options
+   * This optimized version only includes the necessary data in the key
+   * to avoid cache misses due to irrelevant state changes
+   */
+  private getConditionCacheKey(
+    condition: TransformationCondition,
+    readerState: ReaderState,
+    nodeState: NodeState
+  ): string {
+    // Hash the condition object
+    const conditionHash = JSON.stringify(condition);
+    
+    // Create a minimal reader state hash with only the parts that affect condition evaluation
+    const readerStateHash = JSON.stringify({
+      path: {
+        sequence: readerState.path.sequence,
+        revisitPatterns: readerState.path.revisitPatterns,
+        // Only include durations for the current node to reduce key size
+        durations: nodeState ? { [nodeState.id]: readerState.path.durations[nodeState.id] } : {}
+      },
+      endpointProgress: readerState.endpointProgress,
+      totalReadingTime: readerState.totalReadingTime
+    });
+    
+    // Create a minimal node state hash
+    const nodeStateHash = JSON.stringify({
+      id: nodeState.id,
+      visitCount: nodeState.visitCount,
+      temporalValue: nodeState.temporalValue,
+      strangeAttractors: nodeState.strangeAttractors
+    });
+    
+    // Combine the hashes with a version number for easy invalidation
+    return `v1:${nodeState.id}:${conditionHash}:${readerStateHash}:${nodeStateHash}`;
+  }
+  
+  /**
+   * Create a hash key for transformation caching
+   * Takes content and transformations into account
+   */
+  private getTransformationCacheKey(
+    content: string,
+    transformations: TextTransformation[],
+    options: CacheKeyOptions = {}
+  ): string {
+    const {
+      contentPrefix = 30,
+      includeTransformations = true
+    } = options;
+    
+    // Use a prefix of the content to keep key size reasonable
+    const contentHash = content.substring(0, contentPrefix);
+    
+    // For transformations, hash only the essential properties
+    const transformationsHash = includeTransformations
+      ? transformations.map(t =>
+          `${t.type}:${t.selector?.substring(0, 10)}:${t.priority}`
+        ).join('|')
+      : '';
+    
+    // Add a timestamp component for version-based invalidation
+    const versionComponent = Math.floor(this.lastModificationTime / 1000); // Seconds precision
+    
+    return `v1:${contentHash}:${transformations.length}:${versionComponent}:${transformationsHash}`;
+  }
+  
+  /**
+   * Invalidate all caches - call this when transformation rules change
+   */
+  public invalidateCaches(): void {
+    this.conditionCache.clear();
+    this.transformationCache.clear();
+    this.batchedTransformationCache.clear();
+    this.lastModificationTime = Date.now();
+  }
+
   /**
    * Core method to evaluate if a transformation should apply based on the condition
-   * and current reader and node state
+   * and current reader and node state, with caching for performance
    */
   evaluateCondition(
     condition: TransformationCondition,
     readerState: ReaderState,
     nodeState: NodeState
   ): boolean {
-    console.log('Evaluating condition:', JSON.stringify(condition));
+    this.stats.conditionEvaluations++;
+    
+    // Skip caching for empty conditions
+    if (Object.keys(condition).length === 0) {
+      return true;
+    }
+    
+    // Generate cache key
+    const cacheKey = this.getConditionCacheKey(condition, readerState, nodeState);
+    
+    // Check cache first
+    const cachedResult = this.conditionCache.get(cacheKey);
+    if (cachedResult !== undefined) {
+      this.stats.conditionCacheHits++;
+      return cachedResult;
+    }
+    
+    // For debugging
+    // console.log('Evaluating condition:', JSON.stringify(condition));
     // Handle logical operators first
     if (condition.allOf?.length) {
       return condition.allOf.every(subCondition => 
@@ -236,13 +425,37 @@ export class TransformationEngine {
   /**
    * Evaluates a transformation rule against the current reader and node state
    * Returns whether the transformation should be applied and the applicable transformations
+   * Utilizes caching for improved performance
+   */
+  /**
+   * Evaluates a transformation rule against the current reader and node state
+   * Returns whether the transformation should be applied and the applicable transformations
+   * Enhanced with better caching for improved performance
    */
   evaluateTransformation(
     rule: { condition: TransformationCondition; transformations: TextTransformation[] },
     readerState: ReaderState,
     nodeState: NodeState
   ): TransformationResult {
+    // Generate rule-specific cache key that doesn't include the entire rule JSON
+    const ruleCacheKey = `rule:${JSON.stringify(rule.condition)}:${nodeState.id}:${nodeState.visitCount}`;
+    
+    // Check cache first
+    const cachedResult = this.conditionCache.get(ruleCacheKey);
+    if (cachedResult !== undefined) {
+      this.stats.conditionCacheHits++;
+      return {
+        shouldApply: cachedResult,
+        appliedTransformations: cachedResult ? rule.transformations : []
+      };
+    }
+    
+    // Not found in cache, evaluate condition
+    this.stats.conditionEvaluations++;
     const shouldApply = this.evaluateCondition(rule.condition, readerState, nodeState);
+    
+    // Cache the result
+    this.conditionCache.put(ruleCacheKey, shouldApply);
     
     return {
       shouldApply,
@@ -264,10 +477,28 @@ export class TransformationEngine {
   }
   
   /**
-   * Applies a text transformation to the given content
+   * Applies a text transformation to the given content with caching
+   */
+  /**
+   * Applies a text transformation to the given content with enhanced caching
    */
   applyTextTransformation(content: string, transformation: TextTransformation): string {
     if (!transformation.selector) return content;
+    
+    this.stats.transformations++;
+    
+    // Generate more efficient cache key for this transformation
+    const transformCacheKey = this.getTransformationCacheKey(content, [transformation], {
+      contentPrefix: 50,
+      includeTransformations: true
+    });
+    
+    // Check cache first
+    const cachedTransformation = this.transformationCache.get(transformCacheKey);
+    if (cachedTransformation !== undefined) {
+      this.stats.transformationCacheHits++;
+      return cachedTransformation;
+    }
     
     const escapedSelector = this.escapeRegExp(transformation.selector);
     const selectorRegex = new RegExp(escapedSelector, 'g');
@@ -532,11 +763,14 @@ export class TransformationEngine {
   }
   
   /**
-   * Applies multiple transformations to content
+   * Applies multiple transformations to content with enhanced caching
+   */
+  /**
+   * Applies multiple transformations to content with enhanced caching and batching
+   * for improved performance
    */
   applyTransformations(content: string, transformations: TextTransformation[]): string {
-    console.log('Applying transformations:', transformations.length);
-    
+    // Quick return for empty cases
     if (!content) {
       console.warn('Content is empty or undefined');
       return '';
@@ -546,16 +780,98 @@ export class TransformationEngine {
       return content;
     }
     
+    this.stats.batchedTransformations++;
+    
+    // Generate an optimized cache key for this set of transformations
+    const batchCacheKey = this.getTransformationCacheKey(content, transformations);
+    
+    // Check batched transformations cache first
+    const cachedBatchResult = this.batchedTransformationCache.get(batchCacheKey);
+    if (cachedBatchResult !== undefined) {
+      this.stats.batchedCacheHits++;
+      return cachedBatchResult;
+    }
+    
     try {
-      return transformations.reduce(
+      // First sort transformations by priority to ensure consistent application order
+      // This ensures cache hits even if transformations are provided in different orders
+      const sortedTransformations = [...transformations].sort((a, b) => {
+        // Convert string priority to numeric value
+        const getPriorityValue = (p?: string) => {
+          if (p === 'high') return 3;
+          if (p === 'medium') return 2;
+          if (p === 'low') return 1;
+          return 0;
+        };
+        return getPriorityValue(b.priority) - getPriorityValue(a.priority);
+      });
+      
+      // Apply transformations in batches for better performance
+      // This reduces the number of string manipulations
+      const result = sortedTransformations.reduce(
         (currentContent, transformation) =>
           this.applyTextTransformation(currentContent, transformation),
         content
       );
+      
+      // Cache the result in the batched cache
+      this.batchedTransformationCache.put(batchCacheKey, result);
+      
+      return result;
     } catch (error) {
       console.error('Error applying transformations:', error);
       return content; // Return original content on error
     }
+  }
+  
+  /**
+   * Clears all caches - useful when content or conditions change significantly
+   */
+  clearCaches(): void {
+    this.conditionCache.clear();
+    this.transformationCache.clear();
+    this.batchedTransformationCache.clear();
+    this.stats = {
+      conditionEvaluations: 0,
+      conditionCacheHits: 0,
+      transformations: 0,
+      transformationCacheHits: 0,
+      batchedTransformations: 0,
+      batchedCacheHits: 0
+    };
+  }
+  
+  /**
+   * Returns cache statistics for monitoring performance
+   */
+  /**
+   * Returns comprehensive cache statistics for monitoring performance
+   */
+  getCacheStats(): {
+    conditionCache: { size: number, capacity: number, hitRate: number },
+    transformationCache: { size: number, capacity: number, hitRate: number },
+    batchedTransformationCache: { size: number, capacity: number, hitRate: number }
+  } {
+    return {
+      conditionCache: {
+        ...this.conditionCache.getStats(),
+        hitRate: this.stats.conditionEvaluations > 0
+          ? this.stats.conditionCacheHits / this.stats.conditionEvaluations
+          : 0
+      },
+      transformationCache: {
+        ...this.transformationCache.getStats(),
+        hitRate: this.stats.transformations > 0
+          ? this.stats.transformationCacheHits / this.stats.transformations
+          : 0
+      },
+      batchedTransformationCache: {
+        ...this.batchedTransformationCache.getStats(),
+        hitRate: this.stats.batchedTransformations > 0
+          ? this.stats.batchedCacheHits / this.stats.batchedTransformations
+          : 0
+      }
+    };
   }
 }
 

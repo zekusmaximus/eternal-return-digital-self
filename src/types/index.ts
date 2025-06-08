@@ -126,6 +126,10 @@ export interface TextTransformation {
   
   // Meta comment properties
   commentStyle?: 'inline' | 'footnote' | 'marginalia' | 'interlinear'; // Style of meta comment
+  
+  // Performance optimization properties
+  priority?: 'high' | 'medium' | 'low'; // Used for prioritizing transformations for lazy loading
+  applyImmediately?: boolean; // Force immediate application regardless of visibility
 }
 
 /**

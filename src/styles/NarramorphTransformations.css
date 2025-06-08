@@ -8,8 +8,9 @@
 
 /* Base transformation styles */
 .narramorph-transform {
-  transition: all 0.7s ease-in-out;
+  transition: all 0.7s cubic-bezier(0.25, 0.1, 0.25, 1);
   position: relative;
+  will-change: transform, opacity;
 }
 
 /* Replacement transformation styles */
@@ -19,6 +20,23 @@
   padding-left: 8px;
   margin-left: -10px;
   display: inline-block;
+  transform-origin: left center;
+  transition: all 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.narramorph-transform-replace::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, rgba(64, 156, 255, 0.1), transparent);
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.5s ease-out, opacity 0.5s ease-out;
+  z-index: -1;
 }
 
 .narramorph-transform-replace::after {
@@ -31,33 +49,70 @@
   background: linear-gradient(90deg, rgba(64, 156, 255, 0.5), transparent);
   transform: scaleX(0);
   transform-origin: left;
-  transition: transform 1.2s ease-out;
+  transition: transform 1.2s cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+.narramorph-replaced::before {
+  opacity: 1;
+  transform: scaleX(1);
 }
 
 .narramorph-replaced::after {
   transform: scaleX(1);
 }
 
+.narramorph-transform-replace:hover {
+  background-color: rgba(64, 156, 255, 0.08);
+  transform: translateX(2px);
+}
+
 /* Fragment transformation styles */
 .narramorph-transform-fragment {
   letter-spacing: 0.05em;
-  transition: letter-spacing 1.5s ease-in-out;
+  transition: all 1.5s cubic-bezier(0.23, 1, 0.32, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.narramorph-transform-fragment::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.5) 50%,
+    rgba(255, 255, 255, 0) 100%);
+  transform: translateX(-100%);
+  transition: transform 1.5s ease-in-out;
 }
 
 .narramorph-fragmented {
   letter-spacing: 0.12em;
-  background: linear-gradient(90deg, 
-    rgba(255, 255, 255, 1) 0%, 
-    rgba(245, 245, 245, 1) 50%, 
+  background: linear-gradient(90deg,
+    rgba(255, 255, 255, 1) 0%,
+    rgba(245, 245, 245, 1) 50%,
     rgba(240, 240, 240, 1) 100%);
   padding: 0 4px;
   border-radius: 3px;
   text-shadow: 0 0 1px rgba(0, 0, 0, 0.1);
 }
 
+.narramorph-fragmented::after {
+  animation: fragment-shine 2.5s infinite;
+}
+
+@keyframes fragment-shine {
+  0% { transform: translateX(-100%); }
+  40%, 100% { transform: translateX(100%); }
+}
+
 /* Expansion transformation styles */
 .narramorph-transform-expand {
   display: inline-block;
+  transform-origin: top left;
 }
 
 .narramorph-expansion {
@@ -68,17 +123,27 @@
   font-style: italic;
   display: inline-block;
   vertical-align: bottom;
-  transition: opacity 1s ease, max-height 1s ease;
+  transition: opacity 1s cubic-bezier(0.175, 0.885, 0.32, 1.275),
+              max-height 1s cubic-bezier(0.175, 0.885, 0.32, 1.275),
+              transform 1s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  transform: translateY(20px);
 }
 
 .narramorph-expanded .narramorph-expansion {
   opacity: 1;
   max-height: 300px;
+  transform: translateY(0);
 }
 
 /* Emphasis transformation styles */
 .narramorph-transform-emphasize {
-  transition: all 0.7s ease-in-out;
+  transition: all 0.7s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  position: relative;
+  z-index: 1;
+}
+
+.narramorph-transform-emphasize:hover {
+  transform: scale(1.02);
 }
 
 .narramorph-emphasis-italic {
@@ -91,10 +156,18 @@
 
 .narramorph-emphasis-color {
   color: #3a7ca5;
-  background: linear-gradient(180deg, 
-    rgba(58, 124, 165, 0) 0%, 
+  background: linear-gradient(180deg,
+    rgba(58, 124, 165, 0) 0%,
     rgba(58, 124, 165, 0.1) 100%);
   padding: 0 2px;
+  transition: all 0.5s ease;
+  background-size: 100% 200%;
+  background-position: 0 0;
+}
+
+.narramorph-emphasis-color:hover {
+  background-position: 0 100%;
+  color: #2c5f80;
 }
 
 .narramorph-emphasis-spacing {
@@ -320,6 +393,7 @@
 /* Meta comment transformation styles */
 .narramorph-transform-metaComment {
   position: relative;
+  transition: all 0.5s ease;
 }
 
 .narramorph-comment {
@@ -327,13 +401,20 @@
   color: #888;
   font-size: 0.9em;
   opacity: 0;
-  transform: translateY(-5px);
-  transition: opacity 0.7s ease, transform 0.7s ease;
+  transform: translateY(-5px) scale(0.95);
+  transition: all 0.7s cubic-bezier(0.215, 0.61, 0.355, 1);
+  border-bottom: 1px dotted #ddd;
+  position: relative;
 }
 
 .narramorph-commented .narramorph-comment {
   opacity: 1;
-  transform: translateY(0);
+  transform: translateY(0) scale(1);
+}
+
+.narramorph-transform-metaComment:hover .narramorph-comment {
+  color: #666;
+  border-color: #aaa;
 }
 
 /* Footnote style */
@@ -431,13 +512,62 @@
 
 /* Entrance animations for newly transformed content */
 @keyframes highlight-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(64, 156, 255, 0); }
-  50% { box-shadow: 0 0 0 10px rgba(64, 156, 255, 0.2); }
-  100% { box-shadow: 0 0 0 0 rgba(64, 156, 255, 0); }
+  0% { box-shadow: 0 0 0 0 rgba(64, 156, 255, 0); background-color: rgba(64, 156, 255, 0.05); }
+  50% { box-shadow: 0 0 0 10px rgba(64, 156, 255, 0.2); background-color: rgba(64, 156, 255, 0.1); }
+  100% { box-shadow: 0 0 0 0 rgba(64, 156, 255, 0); background-color: rgba(64, 156, 255, 0.05); }
 }
 
+@keyframes fade-in-up {
+  0% { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scale-in {
+  0% { opacity: 0; transform: scale(0.95); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slide-in-right {
+  0% { opacity: 0; transform: translateX(-20px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes attention-bounce {
+  0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-5px); }
+  60% { transform: translateY(-3px); }
+}
+
+@keyframes text-shimmer {
+  0% { background-position: -100% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Apply different animations based on transformation type */
 .narramorph-transform-new {
   animation: highlight-pulse 2s ease-out;
+}
+
+.narramorph-transform-replace.narramorph-transform-new {
+  animation: slide-in-right 0.7s ease-out, highlight-pulse 2s ease-out 0.5s;
+}
+
+.narramorph-transform-expand.narramorph-transform-new {
+  animation: scale-in 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.narramorph-transform-emphasize.narramorph-transform-new {
+  animation: attention-bounce 1.5s ease;
+}
+
+.narramorph-transform-metaComment.narramorph-transform-new {
+  animation: fade-in-up 0.7s ease-out;
+}
+
+.narramorph-transform-fragment.narramorph-transform-new {
+  background: linear-gradient(90deg, rgba(255,255,255,0), rgba(64, 156, 255, 0.2), rgba(255,255,255,0));
+  background-size: 200% 100%;
+  animation: text-shimmer 2s linear infinite;
 }
 
 /* Responsive adjustments */
@@ -483,4 +613,146 @@
 .narramorph-debug p {
   margin: 0.25rem 0;
   font-size: 0.9em;
+}
+
+/* Animation Container Styles */
+.narramorph-animation-container {
+  position: relative;
+  transition: all 0.5s cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+.narramorph-animation-content {
+  position: relative;
+  z-index: 1;
+}
+
+/* Container state animations */
+.narramorph-container-transform-active {
+  animation: container-pulse 1s ease-out;
+}
+
+.narramorph-container-replace-active {
+  animation: container-slide-in 0.8s cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+
+.narramorph-container-emphasis-active {
+  animation: container-emphasis 1s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.narramorph-container-expand-active {
+  animation: container-expand 1.2s cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+/* Animation keyframes for container transitions */
+@keyframes container-pulse {
+  0% { background-color: rgba(64, 156, 255, 0.02); }
+  50% { background-color: rgba(64, 156, 255, 0.05); }
+  100% { background-color: transparent; }
+}
+
+@keyframes container-slide-in {
+  0% { transform: translateX(-5px); opacity: 0.95; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes container-emphasis {
+  0% { transform: scale(0.99); }
+  50% { transform: scale(1.005); }
+  100% { transform: scale(1); }
+}
+
+@keyframes container-expand {
+  0% { max-height: 90%; }
+  50% { max-height: 105%; }
+  100% { max-height: 100%; }
+}
+
+/* Transformation indicator styles */
+.narramorph-transformation-indicator {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  background: rgba(64, 156, 255, 0.1);
+  color: rgba(64, 156, 255, 0.8);
+  border: 1px solid rgba(64, 156, 255, 0.2);
+  border-radius: 50%;
+  width: 1.5rem;
+  height: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  opacity: 0.5;
+  transition: all 0.5s cubic-bezier(0.19, 1, 0.22, 1);
+  cursor: help;
+  z-index: 10;
+  pointer-events: auto;
+}
+
+.narramorph-transformation-indicator.active {
+  opacity: 1;
+  background: rgba(64, 156, 255, 0.15);
+  box-shadow: 0 0 10px rgba(64, 156, 255, 0.15);
+  animation: indicator-pulse 2s infinite alternate;
+}
+
+.narramorph-transformation-indicator:hover {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+@keyframes indicator-pulse {
+  0% { box-shadow: 0 0 5px rgba(64, 156, 255, 0.1); }
+  100% { box-shadow: 0 0 8px rgba(64, 156, 255, 0.3); }
+}
+
+.transformation-change-indicator {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  background-color: rgba(64, 156, 255, 0.9);
+  color: white;
+  border-radius: 50%;
+  width: 1rem;
+  height: 1rem;
+  font-size: 0.6rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: pop-in 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes pop-in {
+  0% { transform: scale(0); }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+/* State transition effects for content changes */
+.narramorph-content[data-transformations-count="0"] {
+  transition: opacity 0.3s ease;
+}
+
+.narramorph-content[data-transformations-count="1"] {
+  transition: all 0.5s ease;
+}
+
+.narramorph-content[data-transformations-count="2"] {
+  transition: all 0.6s ease-in-out;
+}
+
+.narramorph-content[data-transformations-count="3"] {
+  transition: all 0.7s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.narramorph-content[data-transformations-count="4"] {
+  transition: all 0.8s cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+.narramorph-content[data-transformations-count="5"] {
+  transition: all 0.9s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.narramorph-content[data-transformations-count="6"] {
+  transition: all 1s cubic-bezier(0.34, 1.56, 0.64, 1);
 }

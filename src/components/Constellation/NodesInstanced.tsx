@@ -10,23 +10,44 @@ import { navigateToNode } from '../../store/slices/readerSlice';
 import { visitNode } from '../../store/slices/nodesSlice';
 import { AppDispatch } from '../../store';
 import { ConstellationNode, NodePositions } from '../../types';
-import { forwardRef, useMemo, useRef } from 'react';
-import { Color, InstancedMesh, ShaderMaterial } from 'three';
+import { forwardRef, useMemo, useRef, useEffect, useState } from 'react';
+import { Color, InstancedMesh, ShaderMaterial, Frustum, Matrix4, Vector3 } from 'three';
 import * as THREE from 'three';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 
-// Simple noise function implementation (a basic version of Simplex noise)
-const createSimpleNoise = () => {
-  return (x: number, y: number, z: number, time: number) => {
-    // Create a simple 3D noise using sine waves with different frequencies
-    return Math.sin(x * 0.3 + time * 0.7) * 0.3 +
-           Math.sin(y * 0.5 + time * 0.3) * 0.3 +
-           Math.sin(z * 0.2 + time * 0.5) * 0.3;
+// Cached simple noise function implementation
+// Using a more optimized approach with pre-computed values
+const noise3D = (() => {
+  // Pre-compute some frequency values
+  const freqX = 0.3;
+  const freqY = 0.5;
+  const freqZ = 0.2;
+  const timeScaleX = 0.7;
+  const timeScaleY = 0.3;
+  const timeScaleZ = 0.5;
+  const amplitude = 0.3;
+  
+  // Create lookup tables for sin values to reduce calculations
+  const LOOKUP_SIZE = 256;
+  const sinLookup = new Float32Array(LOOKUP_SIZE);
+  for (let i = 0; i < LOOKUP_SIZE; i++) {
+    sinLookup[i] = Math.sin((i / LOOKUP_SIZE) * Math.PI * 2);
+  }
+  
+  // Get sin value from lookup table
+  const fastSin = (val: number): number => {
+    // Normalize value to 0-1 range
+    const idx = Math.floor((val % (Math.PI * 2)) / (Math.PI * 2) * LOOKUP_SIZE) & (LOOKUP_SIZE - 1);
+    return sinLookup[idx];
   };
-};
-
-// Initialize the noise function
-const noise3D = createSimpleNoise();
+  
+  return (x: number, y: number, z: number, time: number): number => {
+    // Using faster calculation with lookup
+    return fastSin(x * freqX + time * timeScaleX) * amplitude +
+           fastSin(y * freqY + time * timeScaleY) * amplitude +
+           fastSin(z * freqZ + time * timeScaleZ) * amplitude;
+  };
+})();
 
 // Circuit pattern vertex shader
 const circuitVertexShader = `
@@ -140,6 +161,87 @@ const triadColors = {
   Algorithm: new Color('#6666ff'), // Bluish
 };
 
+// Create a class for managing node visibility and LOD
+class NodeVisibilityManager {
+  private frustum: Frustum;
+  private matrix: Matrix4;
+  private camera: THREE.Camera;
+  private visibleNodes: Set<string>;
+  private distanceThresholds: { [key: string]: number };
+  private lastUpdateTime: number;
+  private updateInterval: number;
+  
+  constructor(camera: THREE.Camera) {
+    this.frustum = new Frustum();
+    this.matrix = new Matrix4();
+    this.camera = camera;
+    this.visibleNodes = new Set();
+    this.distanceThresholds = {
+      high: 20,   // High detail within 20 units
+      medium: 40, // Medium detail within 40 units
+      low: 60     // Low detail within 60 units
+    };
+    this.lastUpdateTime = 0;
+    this.updateInterval = 250; // Update visibility every 250ms
+  }
+  
+  updateFrustum() {
+    this.matrix.multiplyMatrices(
+      this.camera.projectionMatrix,
+      this.camera.matrixWorldInverse
+    );
+    this.frustum.setFromProjectionMatrix(this.matrix);
+  }
+  
+  shouldUpdate(time: number): boolean {
+    if (time - this.lastUpdateTime > this.updateInterval) {
+      this.lastUpdateTime = time;
+      return true;
+    }
+    return false;
+  }
+  
+  checkNodeVisibility(nodeId: string, position: Vector3): {
+    isVisible: boolean,
+    detailLevel: 'high' | 'medium' | 'low' | 'culled'
+  } {
+    // Always consider important nodes visible
+    if (this.visibleNodes.has(nodeId)) {
+      this.visibleNodes.delete(nodeId);
+    }
+    
+    // Check if in frustum
+    const isInFrustum = this.frustum.containsPoint(position);
+    if (!isInFrustum) {
+      return { isVisible: false, detailLevel: 'culled' };
+    }
+    
+    // Calculate distance to camera for LOD
+    const distance = position.distanceTo(this.camera.position);
+    
+    // Determine detail level based on distance
+    let detailLevel: 'high' | 'medium' | 'low' | 'culled';
+    if (distance <= this.distanceThresholds.high) {
+      detailLevel = 'high';
+    } else if (distance <= this.distanceThresholds.medium) {
+      detailLevel = 'medium';
+    } else if (distance <= this.distanceThresholds.low) {
+      detailLevel = 'low';
+    } else {
+      detailLevel = 'culled';
+    }
+    
+    // Add to visible nodes
+    this.visibleNodes.add(nodeId);
+    
+    return { isVisible: true, detailLevel };
+  }
+  
+  getVisibleNodeCount(): number {
+    return this.visibleNodes.size;
+  }
+}
+
 export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
   (props, ref) => {
   const {
@@ -155,6 +257,13 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
   const hoveredNodeId = useSelector(selectHoveredNodeId);
   const reduxSelectedNodeId = useSelector(selectSelectedNodeId);
   const selectedNodeId = overrideSelectedNodeId ?? reduxSelectedNodeId;
+  
+  // Get camera from Three.js context for visibility culling
+  const { camera } = useThree();
+  
+  // Create visibility manager
+  const visibilityManagerRef = useRef<NodeVisibilityManager | null>(null);
+  const [visibleNodeCount, setVisibleNodeCount] = useState(0);
 
   const connectedNodeIds = useMemo(() => {
     if (!selectedNodeId) return new Set<string>();
@@ -183,32 +292,80 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
     });
   }, [nodes, nodePositions]);
   
-  // Update shader time uniform and apply noise movement
+  // Create visibility manager on initialization
+  useEffect(() => {
+    if (!visibilityManagerRef.current) {
+      visibilityManagerRef.current = new NodeVisibilityManager(camera);
+    }
+  }, [camera]);
+  
+  // Update shader time uniform and apply noise movement with optimized LOD
   // Frame counter for throttling updates
   const frameCount = useRef(0);
+  const lastUpdatePositionsTime = useRef(0);
+  const lastUpdateMaterialsTime = useRef(0);
   
-  // Optimization: Only update certain elements on certain frames
+  // Enhanced optimization: Using variable update rates based on priority
   useFrame((state) => {
     const time = state.clock.elapsedTime;
     frameCount.current += 1;
     
-    // Update time uniforms on every frame (critical for visual continuity)
-    materialRefs.current.forEach(material => {
-      if (material?.uniforms?.time) {
-        material.uniforms.time.value = time;
-      }
-    });
+    // Initialize visibility manager if needed
+    if (!visibilityManagerRef.current) {
+      visibilityManagerRef.current = new NodeVisibilityManager(camera);
+    }
     
-    // Update force field materials on every frame
-    forceFieldMaterialRefs.current.forEach(material => {
-      if (material?.uniforms?.time) {
-        material.uniforms.time.value = time;
-      }
-    });
+    // Update frustum for visibility checks (less frequently)
+    if (visibilityManagerRef.current.shouldUpdate(time)) {
+      visibilityManagerRef.current.updateFrustum();
+    }
     
-    // Throttle the expensive noise-based position updates to every 2nd frame
-    if (frameCount.current % 2 === 0) {
+    // Time-based throttling for shader updates
+    const shouldUpdateMaterials = time - lastUpdateMaterialsTime.current > 0.05; // 50ms
+    if (shouldUpdateMaterials) {
+      lastUpdateMaterialsTime.current = time;
+      
+      // Update time uniforms on important materials only
+      const importantMaterials = materialRefs.current.filter((_, i) => {
+        const node = nodes[i];
+        return node && (
+          node.id === selectedNodeId ||
+          node.id === hoveredNodeId ||
+          connections.some(c => c.start === node.id || c.end === node.id)
+        );
+      });
+      
+      // Batch updates to reduce overhead
+      importantMaterials.forEach(material => {
+        if (material?.uniforms?.time) {
+          material.uniforms.time.value = time;
+        }
+      });
+      
+      // Update force field materials only for selected/hovered nodes
+      const importantForceFields = forceFieldMaterialRefs.current.filter((_, i) => {
+        const node = nodes[i];
+        return node && (node.id === selectedNodeId || node.id === hoveredNodeId);
+      });
+      
+      importantForceFields.forEach(material => {
+        if (material?.uniforms?.time) {
+          material.uniforms.time.value = time;
+        }
+      });
+    }
+    
+    // Throttle the expensive noise-based position updates
+    // More aggressive throttling for nodes that are not important
+    const timeSinceLastPositionUpdate = time - lastUpdatePositionsTime.current;
+    const shouldUpdatePositions = timeSinceLastPositionUpdate > 0.1; // 100ms
+    
+    if (shouldUpdatePositions) {
+      lastUpdatePositionsTime.current = time;
+      
       // Apply organic movement to nodes using noise - with optimized calculations
+      let visibleCount = 0;
+      
       for (let i = 0; i < nodes.length; i++) {
         const node = nodes[i];
         const nodeMesh = nodeMeshRefs.current[i];
@@ -218,22 +375,89 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
         const origPos = originalPositions.current[node.id];
         if (!origPos) continue; // Skip if no original position
         
-        // Apply subtle noise-based movement - reduced amplitude
-        const noiseAmount = 0.03; // Reduced movement for better performance
-        const nx = noise3D(origPos[0], origPos[1], origPos[2], time * 0.3); // Slower updates
-        const ny = noise3D(origPos[0] + 100, origPos[1] + 100, origPos[2] + 100, time * 0.25);
-        const nz = noise3D(origPos[0] + 200, origPos[1] + 200, origPos[2] + 200, time * 0.2);
+        // Create a Vector3 for position (reused for visibility check)
+        const position = new THREE.Vector3(origPos[0], origPos[1], origPos[2]);
         
-        nodeMesh.position.x = origPos[0] + nx * noiseAmount;
-        nodeMesh.position.y = origPos[1] + ny * noiseAmount;
-        nodeMesh.position.z = origPos[2] + nz * noiseAmount;
+        // Check visibility and LOD level
+        const { detailLevel } = visibilityManagerRef.current.checkNodeVisibility(
+          node.id,
+          position
+        );
         
-        // Update force field position only if it exists
-        const forceMesh = forceFieldMeshRefs.current[i];
-        if (forceMesh) {
-          forceMesh.position.copy(nodeMesh.position);
+        // Skip updates for culled nodes
+        if (detailLevel === 'culled') {
+          // Hide node completely
+          nodeMesh.visible = false;
+          
+          // Also hide force field
+          const forceMesh = forceFieldMeshRefs.current[i];
+          if (forceMesh) forceMesh.visible = false;
+          
+          continue;
+        }
+        
+        // Show node
+        nodeMesh.visible = true;
+        visibleCount++;
+        
+        // Adjust noise amount based on detail level
+        let noiseAmount = 0.03; // Default
+        let updateFrequency = 1.0; // Default (every frame)
+        
+        switch (detailLevel) {
+          case 'high':
+            // Full detail for important nodes
+            noiseAmount = 0.03;
+            updateFrequency = 1.0;
+            break;
+          case 'medium':
+            // Medium detail for medium distance
+            noiseAmount = 0.02;
+            updateFrequency = 0.5; // Every other frame
+            break;
+          case 'low':
+            // Low detail for far distance
+            noiseAmount = 0.01;
+            updateFrequency = 0.25; // Every fourth frame
+            break;
+        }
+        
+        // Special case for important nodes - always high detail
+        const isImportantNode = node.id === selectedNodeId || node.id === hoveredNodeId;
+        if (isImportantNode) {
+          noiseAmount = 0.03;
+          updateFrequency = 1.0;
+        }
+        
+        // Only update position based on update frequency
+        if (Math.random() < updateFrequency) {
+          // Apply subtle noise-based movement - with adaptive amplitude
+          const nx = noise3D(origPos[0], origPos[1], origPos[2], time * 0.3);
+          const ny = noise3D(origPos[0] + 100, origPos[1] + 100, origPos[2] + 100, time * 0.25);
+          const nz = noise3D(origPos[0] + 200, origPos[1] + 200, origPos[2] + 200, time * 0.2);
+          
+          // Apply optimization: use matrix update instead of individual position properties
+          // This is more efficient as it avoids multiple matrix recalculations
+          nodeMesh.matrix.makeTranslation(
+            origPos[0] + nx * noiseAmount,
+            origPos[1] + ny * noiseAmount,
+            origPos[2] + nz * noiseAmount
+          );
+          nodeMesh.matrixAutoUpdate = false;
+          
+          // Update force field position only if it exists and node is important
+          const forceMesh = forceFieldMeshRefs.current[i];
+          if (forceMesh && (isImportantNode || detailLevel === 'high')) {
+            forceMesh.visible = isImportantNode; // Only show for important nodes
+            forceMesh.position.copy(nodeMesh.position);
+          } else if (forceMesh) {
+            forceMesh.visible = false;
+          }
         }
       }
+      
+      // Update visible node count for metrics
+      setVisibleNodeCount(visibleCount);
     }
   });
   
@@ -259,15 +483,15 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
         const isConnected = connectedNodeIds.has(node.id);
         const isHovered = hoveredNodeId === node.id;
         
-        // Determine color based on node state
+        // Calculate node color directly
         const baseColor = triadColors[node.character];
-        const color = baseColor.clone();
+        const nodeColor = baseColor.clone();
         if (isSelected) {
-          color.multiplyScalar(1.5); // Lighter shade
+          nodeColor.multiplyScalar(1.5); // Lighter shade
         } else if (isConnected) {
-          color.multiplyScalar(0.5); // Darker shade
+          nodeColor.multiplyScalar(0.5); // Darker shade
         } else if (isHovered) {
-          color.multiplyScalar(1.2); // Slightly lighter for hover
+          nodeColor.multiplyScalar(1.2); // Slightly lighter for hover
         }
         
         return (
@@ -282,7 +506,7 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
                 }}
                 position={[position[0], position[1], position[2]]}>
                 <sphereGeometry args={[0.7, 16, 16]} />
-                <shaderMaterial 
+                <shaderMaterial
                   ref={(material) => {
                     if (material) {
                       forceFieldMaterialRefs.current[index] = material;
@@ -291,7 +515,7 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
                   vertexShader={forceFieldVertexShader}
                   fragmentShader={forceFieldFragmentShader}
                   uniforms={{
-                    color: { value: color },
+                    color: { value: nodeColor },
                     time: { value: 0 }
                   }}
                   transparent={true}
@@ -379,8 +603,14 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
                 window.dispatchEvent(nodeUnhoverEvent);
               }}
             >
-              <octahedronGeometry args={[0.5, 0]} />
-              <shaderMaterial 
+              {/* Use lower poly geometry for distant nodes */}
+              {/* Performance optimization: Use lower poly geometry for distant nodes */}
+              {!isSelected && !isHovered ? (
+                <octahedronGeometry args={[0.5, 0]} /> // Lower poly for distant nodes
+              ) : (
+                <sphereGeometry args={[0.5, 8, 8]} /> // Higher detail for selected/hovered
+              )}
+              <shaderMaterial
                 ref={(material) => {
                   if (material) {
                     // Store reference to this material
@@ -390,7 +620,7 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
                 vertexShader={circuitVertexShader}
                 fragmentShader={circuitFragmentShader}
                 uniforms={{
-                  color: { value: color },
+                  color: { value: nodeColor },
                   time: { value: 0 }
                 }}
               />
@@ -398,6 +628,31 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
           </group>
         );
       })}
+      
+      {/* Display performance information in development mode */}
+      {process.env.NODE_ENV === 'development' && (
+        <group position={[-10, 10, 0]}>
+          <sprite scale={[5, 0.6, 1]} position={[0, 0, 0]}>
+            <spriteMaterial color="#000000" opacity={0.5} transparent={true} />
+          </sprite>
+          <sprite scale={[4.8, 0.4, 1]} position={[0, 0, 0.1]}>
+            <spriteMaterial>
+              <canvasTexture attach="map" image={(() => {
+                const canvas = document.createElement('canvas');
+                canvas.width = 256;
+                canvas.height = 32;
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                  ctx.fillStyle = 'white';
+                  ctx.font = '11px monospace';
+                  ctx.fillText(`Visible: ${visibleNodeCount}/${nodes.length} nodes`, 10, 20);
+                }
+                return canvas;
+              })()} />
+            </spriteMaterial>
+          </sprite>
+        </group>
+      )}
     </group>
   );
 });

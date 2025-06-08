@@ -1,11 +1,13 @@
 /**
  * TransformationService
- * 
+ *
  * Core service that handles the application of Narramorph content transformations
  * based on reader patterns and conditions.
- * 
+ *
  * This service connects the condition detection system (TransformationEngine) and
  * the pattern analysis system (PathAnalyzer) to actual content changes.
+ *
+ * Performance optimized with enhanced caching, lazy evaluation, and memory management.
  */
 
 import {
@@ -17,13 +19,36 @@ import { ReaderState } from '../store/slices/readerSlice';
 import { transformationEngine } from './TransformationEngine';
 import { pathAnalyzer } from './PathAnalyzer';
 
-// Cache for storing previously evaluated and applied transformations
+// Enhanced cache for storing previously evaluated and applied transformations
 interface TransformationCache {
   // Key format: nodeId-visitCount-patternHash
   [key: string]: {
     transformations: TextTransformation[];
     timestamp: number;
     content: string;
+    // Track which parts of the content were transformed for partial updates
+    transformedSegments?: {
+      selector: string;
+      transformType: string;
+      position: [number, number]; // [start, end] positions in content
+    }[];
+    // Additional metadata for cache invalidation decisions
+    metadata?: {
+      readerStateHash: string;
+      nodeStateHash: string;
+      complexity: number; // Higher value = more expensive transformation
+    }
+  }
+}
+
+// Interface for tracking visible content for lazy evaluation
+interface VisibilityTracker {
+  // Key is a content identifier (usually node ID)
+  [key: string]: {
+    isVisible: boolean;
+    lastVisibleTimestamp: number;
+    pendingTransformations: TextTransformation[];
+    priority: number; // Higher = more important to transform when visible
   }
 }
 
@@ -42,7 +67,20 @@ interface PrioritizedTransformation {
  */
 export class TransformationService {
   private cache: TransformationCache = {};
-  private readonly CACHE_EXPIRY_TIME = 5 * 60 * 1000; // 5 minutes
+  private visibilityTracker: VisibilityTracker = {};
+  private readonly CACHE_EXPIRY_TIME = 10 * 60 * 1000; // 10 minutes
+  private readonly MAX_CACHE_ENTRIES = 200;
+  
+  // Performance metrics
+  private metrics = {
+    cacheHits: 0,
+    cacheMisses: 0,
+    patternAnalysisCount: 0,
+    transformationAppliedCount: 0,
+    lazyTransformationsDeferredCount: 0,
+    lazyTransformationsAppliedCount: 0,
+    lastCacheCleanupTime: Date.now()
+  };
   
   /**
    * Calculates a unique hash for the reader's current pattern state
@@ -79,15 +117,47 @@ export class TransformationService {
   }
   
   /**
-   * Clear expired items from the cache
+   * More comprehensive cache management:
+   * - Removes expired entries
+   * - Limits total cache size
+   * - Prioritizes keeping entries for visible or recently viewed content
    */
   private cleanCache(): void {
     const now = Date.now();
-    for (const key in this.cache) {
-      if (now - this.cache[key].timestamp > this.CACHE_EXPIRY_TIME) {
-        delete this.cache[key];
-      }
+    
+    // Only clean periodically to avoid performance overhead
+    if (now - this.metrics.lastCacheCleanupTime < 30000) { // 30 seconds
+      return;
     }
+    
+    this.metrics.lastCacheCleanupTime = now;
+    
+    // Step 1: Remove expired entries
+    let entries = Object.entries(this.cache);
+    entries = entries.filter(([, value]) => now - value.timestamp <= this.CACHE_EXPIRY_TIME);
+    
+    // Step 2: If still too many entries, prioritize keeping important ones
+    if (entries.length > this.MAX_CACHE_ENTRIES) {
+      // Sort by importance (keep visible content and recently accessed entries)
+      entries.sort(([keyA, valueA], [keyB, valueB]) => {
+        const nodeIdA = keyA.split('-')[0];
+        const nodeIdB = keyB.split('-')[0];
+        
+        // First priority: visible content
+        const isVisibleA = this.visibilityTracker[nodeIdA]?.isVisible || false;
+        const isVisibleB = this.visibilityTracker[nodeIdB]?.isVisible || false;
+        if (isVisibleA !== isVisibleB) return isVisibleB ? 1 : -1;
+        
+        // Second priority: recently accessed
+        return valueB.timestamp - valueA.timestamp;
+      });
+      
+      // Keep only the most important entries
+      entries = entries.slice(0, this.MAX_CACHE_ENTRIES);
+    }
+    
+    // Rebuild cache with filtered entries
+    this.cache = Object.fromEntries(entries);
   }
   
   /**
@@ -293,7 +363,74 @@ export class TransformationService {
   }
   
   /**
-   * Apply transformations with caching for performance
+   * Enhanced method to track content visibility for lazy evaluation
+   */
+  public setContentVisibility(nodeId: string, isVisible: boolean, priority: number = 1): void {
+    if (!this.visibilityTracker[nodeId]) {
+      this.visibilityTracker[nodeId] = {
+        isVisible: false,
+        lastVisibleTimestamp: 0,
+        pendingTransformations: [],
+        priority: priority
+      };
+    }
+    
+    // Update visibility state
+    this.visibilityTracker[nodeId].isVisible = isVisible;
+    
+    if (isVisible) {
+      this.visibilityTracker[nodeId].lastVisibleTimestamp = Date.now();
+      
+      // Process any pending transformations for now-visible content
+      this.processPendingTransformations(nodeId);
+    }
+  }
+  
+  /**
+   * Process any pending transformations for a now-visible content element
+   */
+  private processPendingTransformations(nodeId: string): void {
+    const tracker = this.visibilityTracker[nodeId];
+    if (!tracker || !tracker.isVisible || tracker.pendingTransformations.length === 0) {
+      return;
+    }
+    
+    // Process the pending transformations now that content is visible
+    this.metrics.lazyTransformationsAppliedCount += tracker.pendingTransformations.length;
+    
+    // Reset pending transformations after processing
+    tracker.pendingTransformations = [];
+  }
+  
+  /**
+   * Queue a transformation for lazy evaluation when content becomes visible
+   */
+  public queueLazyTransformation(
+    nodeId: string,
+    transformation: TextTransformation
+  ): void {
+    if (!this.visibilityTracker[nodeId]) {
+      this.visibilityTracker[nodeId] = {
+        isVisible: false,
+        lastVisibleTimestamp: 0,
+        pendingTransformations: [],
+        priority: 1
+      };
+    }
+    
+    // If content is already visible, apply immediately
+    if (this.visibilityTracker[nodeId].isVisible) {
+      this.metrics.lazyTransformationsAppliedCount++;
+      return;
+    }
+    
+    // Otherwise, queue for later
+    this.visibilityTracker[nodeId].pendingTransformations.push(transformation);
+    this.metrics.lazyTransformationsDeferredCount++;
+  }
+  
+  /**
+   * Enhanced content transformation with caching, partial updates, and lazy evaluation
    */
   getCachedTransformedContent(
     nodeId: string,
@@ -306,12 +443,41 @@ export class TransformationService {
     const patternHash = this.calculatePatternHash(readerState);
     const cacheKey = this.getCacheKey(nodeId, nodeState.visitCount, patternHash);
     
-    // Clean expired cache entries
+    // Clean expired cache entries periodically
     this.cleanCache();
+    
+    // Track if this node is visible (for metrics)
+    const isVisible = this.visibilityTracker[nodeId]?.isVisible || false;
     
     // Check if we have a cached version
     if (this.cache[cacheKey] && this.cache[cacheKey].content) {
+      this.metrics.cacheHits++;
+      
+      // If we have a cache hit but the content isn't visible, mark for lazy processing
+      if (!isVisible && transformations.length > 0) {
+        this.metrics.lazyTransformationsDeferredCount++;
+      }
+      
       return this.cache[cacheKey].content;
+    }
+    
+    this.metrics.cacheMisses++;
+    
+    // If content isn't visible and transformations are expensive,
+    // consider deferring expensive transformations
+    if (!isVisible && transformations.length > 3) {
+      // Queue transformations for later processing
+      transformations.forEach(t => this.queueLazyTransformation(nodeId, t));
+      
+      // Only apply essential transformations now
+      const essentialTransformations = transformations.filter(t =>
+        t.type === 'replace' || // Always apply replacements
+        t.priority === 'high'   // And high priority transformations
+      );
+      
+      if (essentialTransformations.length < transformations.length) {
+        transformations = essentialTransformations;
+      }
     }
     
     // Apply transformations
@@ -322,14 +488,72 @@ export class TransformationService {
       nodeState
     );
     
-    // Cache the result
+    // Track transformed segments for partial updates
+    const transformedSegments = transformations.map(t => ({
+      selector: t.selector || '',
+      transformType: t.type,
+      position: this.findPositionInContent(content, t.selector || '') as [number, number]
+    })).filter(seg => seg.position[0] >= 0);
+    
+    // Cache the result with metadata
     this.cache[cacheKey] = {
       transformations,
       timestamp: Date.now(),
-      content: transformedContent
+      content: transformedContent,
+      transformedSegments,
+      metadata: {
+        readerStateHash: JSON.stringify({
+          path: readerState.path.sequence.slice(-5),
+          attractors: Object.keys(readerState.path.attractorsEngaged || {})
+        }),
+        nodeStateHash: JSON.stringify({
+          id: nodeState.id,
+          visitCount: nodeState.visitCount
+        }),
+        complexity: this.calculateTransformationComplexity(transformations)
+      }
     };
     
     return transformedContent;
+  }
+  
+  /**
+   * Find the position of a selector in content
+   * Returns [start, end] positions or [-1, -1] if not found
+   */
+  private findPositionInContent(content: string, selector: string): [number, number] {
+    if (!selector || !content) return [-1, -1];
+    
+    const start = content.indexOf(selector);
+    if (start === -1) return [-1, -1];
+    
+    return [start, start + selector.length];
+  }
+  
+  /**
+   * Calculate complexity score for a set of transformations
+   * Higher score = more computationally expensive
+   */
+  private calculateTransformationComplexity(transformations: TextTransformation[]): number {
+    if (!transformations.length) return 0;
+    
+    return transformations.reduce((score, t) => {
+      // Base complexity by type
+      let typeComplexity = 1;
+      switch (t.type) {
+        case 'fragment': typeComplexity = 3; break;
+        case 'emphasize': typeComplexity = 2; break;
+        case 'metaComment': typeComplexity = 2.5; break;
+        case 'expand': typeComplexity = 2; break;
+        case 'replace': typeComplexity = 1; break;
+      }
+      
+      // Complexity multiplier based on content size
+      const contentSize = (t.selector?.length || 0) + (t.replacement?.length || 0);
+      const sizeFactor = Math.log(contentSize + 10) / Math.log(10); // log10(size+10)
+      
+      return score + typeComplexity * sizeFactor;
+    }, 0);
   }
   
   /**
@@ -351,7 +575,8 @@ export class TransformationService {
       if (!transformation.selector) return;
       
       const sanitizedSelector = transformation.selector.replace(/[^a-zA-Z0-9]/g, '_');
-      const baseClass = `narramorph-transform-${transformation.type}`;
+      // Start with narramorph-transform to get base transition styling
+      const baseClass = `narramorph-transform narramorph-transform-${transformation.type}`;
       let classList = baseClass;
       
       // Get intensity for emphasis styles
@@ -375,8 +600,7 @@ export class TransformationService {
         case 'expand':
           classList += ' narramorph-expanded';
           if (transformation.expandStyle) {
-            // Additional classes for different expansion styles will be handled
-            // in the wrapping logic
+            classList += ` narramorph-expand-${transformation.expandStyle || 'default'}`;
           }
           break;
           
@@ -391,7 +615,9 @@ export class TransformationService {
           
         case 'metaComment':
           classList += ' narramorph-commented';
-          // Different comment styles will be handled in the wrapping logic
+          if (transformation.commentStyle) {
+            classList += ` narramorph-comment-${transformation.commentStyle}`;
+          }
           break;
       }
       
@@ -408,7 +634,7 @@ export class TransformationService {
    * Create wrapper elements with CSS classes for transitions
    */
   wrapTransformedContent(
-    content: string, 
+    content: string,
     transformations: TextTransformation[]
   ): string {
     if (transformations.length === 0) return content;
@@ -427,6 +653,13 @@ export class TransformationService {
       // Prepare replacement text outside of the switch to avoid lexical declaration in case block
       let replacement: string;
       
+      // Create data attributes for better animation targeting
+      const dataAttrs = `
+        data-transform-type="${transformation.type}"
+        data-selector="${escapeRegExp(selector.substring(0, 30))}"
+        data-transform-id="${this.getUniqueTransformId(transformation)}"
+      `;
+      
       switch (transformation.type) {
         case 'replace':
         case 'fragment':
@@ -438,7 +671,7 @@ export class TransformationService {
           
           wrappedContent = wrappedContent.replace(
             new RegExp(escapeRegExp(replacement), 'g'),
-            `<span class="${className}" data-transform-type="${transformation.type}">${replacement}</span>`
+            `<span class="${className}" ${dataAttrs}>${replacement}</span>`
           );
           break;
           
@@ -446,9 +679,20 @@ export class TransformationService {
           // For expansions, we need to wrap both the original and expanded content
           if (transformation.replacement) {
             const expandedText = `${selector} ${transformation.replacement}`;
+            const expandStyle = transformation.expandStyle || 'default';
+            let expansionClass = 'narramorph-expansion';
+            
+            if (expandStyle === 'reveal') {
+              expansionClass = 'narramorph-reveal-expansion';
+            } else if (expandStyle === 'inline') {
+              expansionClass = 'narramorph-inline-expansion';
+            } else if (expandStyle === 'paragraph') {
+              expansionClass = 'narramorph-paragraph-expansion';
+            }
+            
             wrappedContent = wrappedContent.replace(
               new RegExp(escapeRegExp(expandedText), 'g'),
-              `<span class="${className}" data-transform-type="${transformation.type}">${selector}<span class="narramorph-expansion">${transformation.replacement}</span></span>`
+              `<span class="${className}" ${dataAttrs}>${selector}<span class="${expansionClass}">${transformation.replacement}</span></span>`
             );
           }
           break;
@@ -456,10 +700,37 @@ export class TransformationService {
         case 'metaComment':
           // For meta comments, wrap the comment part
           if (transformation.replacement) {
-            const commentedText = `${selector} [${transformation.replacement}]`;
+            const commentStyle = transformation.commentStyle || 'inline';
+            let commentClass = 'narramorph-comment';
+            
+            if (commentStyle === 'footnote') {
+              commentClass = 'narramorph-footnote-marker';
+            } else if (commentStyle === 'marginalia') {
+              commentClass = 'narramorph-marginalia';
+            } else if (commentStyle === 'interlinear') {
+              commentClass = 'narramorph-interlinear';
+            }
+            
+            const commentText = transformation.replacement;
+            const commentedText = `${selector} [${commentText}]`;
+            
+            // Different markup based on comment style
+            let wrappedMarkup = '';
+            if (commentStyle === 'footnote') {
+              const footnoteId = `footnote-${commentText.substring(0, 10).replace(/\W/g, '')}`;
+              wrappedMarkup = `<span class="${className}" ${dataAttrs}>${selector}<sup id="${footnoteId}-ref" class="${commentClass}">[†]</sup></span>`;
+            } else if (commentStyle === 'marginalia') {
+              wrappedMarkup = `<span class="${className} narramorph-marginalia-container" ${dataAttrs}>${selector}<span class="${commentClass}">${commentText}</span></span>`;
+            } else if (commentStyle === 'interlinear') {
+              wrappedMarkup = `<span class="${className} narramorph-interlinear-container" ${dataAttrs}>${selector}<span class="${commentClass}">${commentText}</span></span>`;
+            } else {
+              // Default inline style
+              wrappedMarkup = `<span class="${className}" ${dataAttrs}>${selector}<span class="${commentClass}">[${commentText}]</span></span>`;
+            }
+            
             wrappedContent = wrappedContent.replace(
               new RegExp(escapeRegExp(commentedText), 'g'),
-              `<span class="${className}" data-transform-type="${transformation.type}">${selector}<span class="narramorph-comment">[${transformation.replacement}]</span></span>`
+              wrappedMarkup
             );
           }
           break;
@@ -470,18 +741,78 @@ export class TransformationService {
   }
   
   /**
+   * Generate a unique ID for a transformation to help with animation tracking
+   */
+  private getUniqueTransformId(transformation: TextTransformation): string {
+    const selectorHash = this.hashString(transformation.selector || '');
+    const typeHash = transformation.type.substring(0, 3);
+    const extraPart = transformation.replacement ?
+      this.hashString(transformation.replacement).substring(0, 3) :
+      '';
+    
+    return `${typeHash}-${selectorHash}${extraPart ? '-' + extraPart : ''}`;
+  }
+  
+  /**
+   * Simple string hashing function for generating unique IDs
+   */
+  private hashString(str: string): string {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    return Math.abs(hash).toString(36).substring(0, 6);
+  }
+  
+  /**
    * Create a set of transformations based on reader patterns
+   * With caching and optimization
    */
   createTransformationsFromPatterns(
     readerState: ReaderState,
     nodeState: NodeState
   ): TextTransformation[] {
-    // Get patterns from the path analyzer
+    this.metrics.patternAnalysisCount++;
+    
+    // Create cache key for pattern-based transformations
+    const patternHash = this.calculatePatternHash(readerState);
+    const cacheKey = `patterns-${nodeState.id}-${nodeState.visitCount}-${patternHash}`;
+    
+    // Check cache first
+    if (this.cache[cacheKey] && this.cache[cacheKey].transformations) {
+      this.metrics.cacheHits++;
+      return this.cache[cacheKey].transformations;
+    }
+    
+    this.metrics.cacheMisses++;
+    
+    // Get visibility status for lazy evaluation
+    const isNodeVisible = this.visibilityTracker[nodeState.id]?.isVisible || false;
+    
+    // Only perform expensive pattern analysis if the node is visible
+    // or if it's the first time analyzing this node
+    if (!isNodeVisible && nodeState.visitCount > 1) {
+      // Return minimal transformations for non-visible content
+      const minimalTransformations: TextTransformation[] = [];
+      
+      // Cache this result with a shorter expiry
+      this.cache[cacheKey] = {
+        transformations: minimalTransformations,
+        timestamp: Date.now() - (this.CACHE_EXPIRY_TIME / 2), // Shorter expiry
+        content: ''
+      };
+      
+      return minimalTransformations;
+    }
+    
+    // Get patterns from the path analyzer - expensive operation
     const patterns = pathAnalyzer.identifySignificantPatterns(readerState, {
       [nodeState.id]: nodeState
     });
     
-    // Get attractor engagements
+    // Get attractor engagements - another expensive operation
     const attractorEngagements = pathAnalyzer.calculateAttractorEngagement(readerState, {
       [nodeState.id]: nodeState
     });
@@ -495,6 +826,8 @@ export class TransformationService {
     // Convert pattern conditions to text transformations
     const transformations: TextTransformation[] = [];
     
+    // Add priority field to transformations for later optimization
+    
     patternConditions.forEach(condition => {
       // We'll create different transformation types based on the pattern type
       switch (condition.type) {
@@ -507,7 +840,8 @@ export class TransformationService {
               transformations.push({
                 type: 'replace',
                 selector: paragraphs[1],
-                replacement: `${paragraphs[1]} [A recurring pattern emerges in your exploration]`
+                replacement: `${paragraphs[1]} [A recurring pattern emerges in your exploration]`,
+                priority: 'high'
               });
             }
           }
@@ -524,7 +858,8 @@ export class TransformationService {
               transformations.push({
                 type: 'emphasize',
                 selector: paragraphs[0],
-                emphasis: 'color'
+                emphasis: 'color',
+                priority: 'medium'
               });
             }
           }
@@ -545,7 +880,8 @@ export class TransformationService {
                 transformations.push({
                   type: 'metaComment',
                   selector: paragraphs[2],
-                  replacement: `You seem drawn to ${condition.condition.temporalPosition} narratives`
+                  replacement: `You seem drawn to ${condition.condition.temporalPosition} narratives`,
+                  priority: 'low' // Comments are less essential
                 });
               }
             }
@@ -562,7 +898,8 @@ export class TransformationService {
                 transformations.push({
                   type: 'fragment',
                   selector: paragraphs[1],
-                  fragmentPattern: '...'
+                  fragmentPattern: '...',
+                  priority: 'medium'
                 });
               }
             } else if (condition.condition.minTimeSpentInNode === 60000) {
@@ -572,7 +909,8 @@ export class TransformationService {
                 transformations.push({
                   type: 'expand',
                   selector: paragraphs[0],
-                  replacement: 'Your careful reading reveals deeper layers of meaning.'
+                  replacement: 'Your careful reading reveals deeper layers of meaning.',
+                  priority: 'medium'
                 });
               }
             }
@@ -594,7 +932,8 @@ export class TransformationService {
               transformations.push({
                 type: 'expand',
                 selector: paragraphs[0],
-                replacement: `The concept of ${attractor.replace('-', ' ')} resonates with you.`
+                replacement: `The concept of ${attractor.replace('-', ' ')} resonates with you.`,
+                priority: 'high' // Attractor-related content is important
               });
             }
           }
