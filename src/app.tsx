@@ -232,9 +232,9 @@ function AppContent() {
       window.removeEventListener('error', handleWebGLContextLoss);
       window.removeEventListener('webgl-context-loss', handleWebGLContextLossEvent as EventListener);
       
-      // Clean up all WebGL contexts on app unmount
-      webGLContextManager.disposeAllContexts();
-      console.log('[App] Disposed all WebGL contexts on unmount');
+      // The disposeAllContexts call has been removed from here to prevent race conditions.
+      // The WebGLContextManager's own beforeunload handler is sufficient for final cleanup.
+      console.log('[App] Unmounting');
     };
   }, [viewMode, viewTransitions.length]); // Re-register listeners if viewMode or transitions change to ensure handlers have fresh data.
   

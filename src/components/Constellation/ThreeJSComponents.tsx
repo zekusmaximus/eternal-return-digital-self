@@ -27,6 +27,8 @@ interface ThreeJSComponentsProps {
   onWebGLContextCreated?: (renderer: THREE.WebGLRenderer) => void; // Callback when WebGL renderer is created
   onWebGLError?: (error: Error) => void; // Callback for WebGL errors
   isInitialChoicePhase: boolean;
+  triumvirateActive: boolean;
+  triumvirateNodes: string[];
   positionSynchronizer: {
     updatePositions: (time: number, isMinimap?: boolean) => { [key: string]: [number, number, number] };
     getCurrentPositions: () => { [key: string]: [number, number, number] };
@@ -37,7 +39,7 @@ interface ThreeJSComponentsProps {
 }
 
 // WebGL error handler component
-const WebGLErrorHandler = () => {
+const WebGLErrorHandler = ({ onWebGLError }: { onWebGLError?: (error: Error) => void }) => {
   const { gl } = useThree();
   const [hasError, setHasError] = useState(false);
   
@@ -48,8 +50,10 @@ const WebGLErrorHandler = () => {
     const handleContextLost = (event: Event) => {
       console.error("[ThreeJS] WebGL context lost", event);
       setHasError(true);
-      // Prevent the default behavior which would attempt automatic recovery
       event.preventDefault();
+      if (onWebGLError) {
+        onWebGLError(new Error("WebGL context lost"));
+      }
     };
     
     // Handle WebGL context restoration
@@ -67,7 +71,7 @@ const WebGLErrorHandler = () => {
       gl.domElement.removeEventListener('webglcontextlost', handleContextLost);
       gl.domElement.removeEventListener('webglcontextrestored', handleContextRestored);
     };
-  }, [gl]);
+  }, [gl, onWebGLError]);
   
   // Display error message when context is lost
   if (hasError) {
@@ -126,6 +130,8 @@ const ThreeJSComponents: React.FC<ThreeJSComponentsProps> = ({
   onWebGLContextCreated,
   onWebGLError,
   isInitialChoicePhase,
+  triumvirateActive,
+  triumvirateNodes,
   positionSynchronizer,
   selectedNodeId,
   hoveredNodeId,
@@ -164,21 +170,6 @@ const ThreeJSComponents: React.FC<ThreeJSComponentsProps> = ({
         if (onWebGLContextCreated) {
           onWebGLContextCreated(gl);
         }
-        
-        // Add context loss handling with simplified error reporting
-        const canvas = gl.domElement;
-        canvas.addEventListener('webglcontextlost', (event) => {
-          console.error("[ThreeJS] WebGL context lost event triggered");
-          
-          event.preventDefault();
-          if (onWebGLError) {
-            onWebGLError(new Error("WebGL context lost"));
-          }
-        });
-        
-        canvas.addEventListener('webglcontextrestored', () => {
-          console.log("[ThreeJS] WebGL context restored");
-        });
       }}
       performance={{ min: 0.5 }}
       frameloop="demand"
@@ -221,6 +212,8 @@ const ThreeJSComponents: React.FC<ThreeJSComponentsProps> = ({
         nodePositions={nodePositions}
         connections={convertConnections(connections)}
         isInitialChoicePhase={isInitialChoicePhase}
+        triumvirateActive={triumvirateActive}
+        triumvirateNodes={triumvirateNodes}
         positionSynchronizer={positionSynchronizer}
       />
       <ConnectionsBatched
@@ -234,7 +227,7 @@ const ThreeJSComponents: React.FC<ThreeJSComponentsProps> = ({
       />
       
       {/* Add WebGL error handler */}
-      <WebGLErrorHandler />
+      <WebGLErrorHandler onWebGLError={onWebGLError} />
       
       {/* Add resource optimizer */}
       <ResourceOptimizer />
@@ -257,7 +250,7 @@ const ThreeJSComponents: React.FC<ThreeJSComponentsProps> = ({
         minPolarAngle={0} // Allow full vertical rotation
       />
     </Canvas>
-  ), [nodes, nodePositions, connections, mappedConnections, instancedMeshRef, isInitialChoicePhase, onWebGLContextCreated, onWebGLError, positionSynchronizer, selectedNodeId, hoveredNodeId, isMinimap]);
+  ), [nodes, nodePositions, connections, mappedConnections, instancedMeshRef, isInitialChoicePhase, triumvirateActive, triumvirateNodes, onWebGLContextCreated, onWebGLError, positionSynchronizer, selectedNodeId, hoveredNodeId, isMinimap]);
 };
 
 // Simplified stars component with fixed parameters to reduce render overhead

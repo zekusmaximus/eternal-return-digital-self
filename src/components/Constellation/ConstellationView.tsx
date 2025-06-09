@@ -1,6 +1,6 @@
 import { useSelector, useDispatch } from 'react-redux';
 import { selectConstellationNodes, selectConnections } from '../../store/slices/nodesSlice';
-import { setViewMode, selectSelectedNodeId, selectHoveredNodeId } from '../../store/slices/interfaceSlice';
+import { setViewMode, selectSelectedNodeId, selectHoveredNodeId, selectIsInitialChoicePhase } from '../../store/slices/interfaceSlice';
 import './ConstellationView.css';
 import { useMemo, useRef, lazy, Suspense, useState, useEffect, useCallback } from 'react';
 import { InstancedMesh } from 'three';
@@ -137,8 +137,9 @@ const ConstellationView = () => {
   const [webGLError, setWebGLError] = useState<Error | null>(null);
   const nodes = useSelector(selectConstellationNodes);
   const connections = useSelector(selectConnections);
-  // Temporarily use a default value for isInitialChoicePhase to focus on connection alignment fix
-  const isInitialChoicePhase = false;
+  const triumvirateActive = useSelector((state: { nodes: { triumvirateActive: boolean } }) => state.nodes.triumvirateActive);
+  const triumvirateNodes = useMemo(() => ['arch-discovery', 'algo-awakening', 'human-discovery'], []);
+  const isInitialChoicePhase = useSelector(selectIsInitialChoicePhase);
   const selectedNodeId = useSelector(selectSelectedNodeId);
   const hoveredNodeId = useSelector(selectHoveredNodeId);
   const instancedMeshRef = useRef<InstancedMesh>(null!);
@@ -259,31 +260,9 @@ const ConstellationView = () => {
     console.log(`[ConstellationView] Registered WebGL context: ${id}`);
   }, []); // Empty dependency array ensures stable callback
 
-  // Listen for application-wide WebGL context loss events
-  useEffect(() => {
-    const handleContextLoss = (event: CustomEvent) => {
-      const { contextId: lostContextId, type } = event.detail;
-      
-      // Only handle if this matches our context or is constellation type
-      if ((contextIdRef.current && contextIdRef.current === lostContextId) || type === 'constellation') {
-        console.error("[ConstellationView] Received WebGL context loss event");
-        setWebGLError(new Error("WebGL context lost - application event"));
-      }
-    };
-    
-    // Add event listener for context loss
-    window.addEventListener(
-      'webgl-context-loss',
-      handleContextLoss as EventListener
-    );
-    
-    return () => {
-      window.removeEventListener(
-        'webgl-context-loss',
-        handleContextLoss as EventListener
-      );
-    };
-  }, []); // Empty dependency array - we use ref instead of state
+  // The application-wide WebGL context loss event listener has been removed.
+  // Error handling is now centralized in the ThreeJSComponents' WebGLErrorHandler,
+  // which propagates the error up via the onWebGLError prop.
 
   return (
     <div className="constellation-container">
@@ -295,6 +274,8 @@ const ConstellationView = () => {
           mappedConnections={mappedConnections}
           instancedMeshRef={instancedMeshRef}
           isInitialChoicePhase={isInitialChoicePhase}
+          triumvirateActive={triumvirateActive}
+          triumvirateNodes={triumvirateNodes}
           onWebGLContextCreated={handleWebGLContextCreated}
           onWebGLError={(error) => {
             console.error("[ConstellationView] WebGL error reported:", error);

@@ -116,6 +116,9 @@ const interfaceSlice = createSlice({
       state.selectedNodeId = action.payload;
       state.viewMode = 'reading';
       state.lastInteraction = Date.now();
+      if (state.isInitialChoicePhase) {
+        state.isInitialChoicePhase = false;
+      }
     },
     returnToConstellation: (state) => {
       state.viewMode = 'constellation';

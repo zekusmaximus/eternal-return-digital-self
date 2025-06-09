@@ -22,6 +22,7 @@ export interface NodesState { // Add 'export' right here
   initialized: boolean;
   loading: boolean;
   error: string | null;
+  triumvirateActive: boolean;
 }
 
 
@@ -31,6 +32,7 @@ const initialState: NodesState = {
   initialized: false,
   loading: false,
   error: null,
+  triumvirateActive: true,
 };
 
 // Node data (will be loaded from external source in production)
@@ -250,6 +252,10 @@ const nodesSlice = createSlice({
     visitNode: (state, action: PayloadAction<string>) => {
       const nodeId = action.payload;
       const node = state.data[nodeId];
+
+      if (state.triumvirateActive) {
+        state.triumvirateActive = false;
+      }
       
       if (node) {
         // Update visit count
@@ -398,6 +404,7 @@ const nodesSlice = createSlice({
         node.content = null;
         node.currentContent = null;
       });
+      state.triumvirateActive = true;
     },
   },
   extraReducers: (builder) => {

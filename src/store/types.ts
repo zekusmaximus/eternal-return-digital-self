@@ -124,6 +124,7 @@ export interface RootState {
     initialized: boolean;
     loading: boolean;
     error: string | null;
+    triumvirateActive: boolean;
   };
   reader: {
     path: ReadingPath;

@@ -176,6 +176,8 @@ const MiniConstellation = forwardRef<HTMLDivElement, Record<string, never>>((_pr
             clickableNodeIds={clickableNodeIds}
             isMinimap={true}
             isInitialChoicePhase={false}
+            triumvirateActive={false}
+            triumvirateNodes={[]}
             positionSynchronizer={positionSynchronizer}
           />
           <ConnectionsBatched

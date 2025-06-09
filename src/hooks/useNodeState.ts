@@ -45,7 +45,7 @@ export const useNodeState = (nodeId?: string) => {
   
   // Select node data
   const node = useSelector((state: RootState) =>
-    targetNodeId ? selectNodeById(state as RootState, targetNodeId) : null
+    targetNodeId ? selectNodeById(state, targetNodeId) : null
   );
   
   // Select all nodes to access any node data

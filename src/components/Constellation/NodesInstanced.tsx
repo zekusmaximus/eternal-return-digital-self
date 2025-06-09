@@ -124,10 +124,12 @@ interface NodesInstancedProps {
   onNodeClick?: (nodeId: string) => void;
   clickableNodeIds?: string[];
   isMinimap?: boolean; // Flag to indicate if this is used in the minimap
-  isInitialChoicePhase: boolean;
-  positionSynchronizer: {
-    updatePositions: (time: number, isMinimap?: boolean) => { [key: string]: [number, number, number] };
-    getCurrentPositions: () => { [key: string]: [number, number, number] };
+ isInitialChoicePhase: boolean;
+ triumvirateActive: boolean;
+ triumvirateNodes: string[];
+ positionSynchronizer: {
+   updatePositions: (time: number, isMinimap?: boolean) => { [key: string]: [number, number, number] };
+   getCurrentPositions: () => { [key: string]: [number, number, number] };
   };
 }
 
@@ -170,15 +172,24 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
     clickableNodeIds,
     isInitialChoicePhase,
     positionSynchronizer,
+    triumvirateActive,
+    triumvirateNodes,
   } = props;
   const dispatch = useDispatch<AppDispatch>();
   
   const hoveredNodeId = useSelector(selectHoveredNodeId);
   const reduxSelectedNodeId = useSelector(selectSelectedNodeId);
   const selectedNodeId = overrideSelectedNodeId ?? reduxSelectedNodeId;
-  
-  
+
+  const triumvirateNodeSet = useMemo(() => new Set(triumvirateNodes), [triumvirateNodes]);
+  const triumvirateColorMap = useMemo(() => ({
+    'arch-discovery': new Color('#66ff66'), // Green
+    'algo-awakening': new Color('#6666ff'), // Blue
+    'human-discovery': new Color('#ff6666'), // Red
+  }), []);
+
   const connectedNodeIds = useMemo(() => {
+    if (isInitialChoicePhase || triumvirateActive) return triumvirateNodeSet;
     if (!selectedNodeId) return new Set<string>();
     const connected = new Set<string>();
     connections.forEach((c) => {
@@ -186,7 +197,7 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
       if (c.end === selectedNodeId) connected.add(c.start);
     });
     return connected;
-  }, [selectedNodeId, connections]);
+  }, [selectedNodeId, connections, triumvirateActive, triumvirateNodeSet, isInitialChoicePhase]);
 
   // Create refs for accessing objects in the scene
   const materialRefs = useRef<ShaderMaterial[]>([]);
@@ -390,7 +401,21 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
         const nodeColor = getNodeColor(node.character).clone();
         
         // Apply color adjustments based on node state
-        if (isSelected) {
+        if (isInitialChoicePhase) {
+          if (triumvirateNodeSet.has(node.id)) {
+            const color = triumvirateColorMap[node.id as keyof typeof triumvirateColorMap];
+            if (color) {
+              nodeColor.set(color);
+            }
+          } else {
+            nodeColor.multiplyScalar(0.2); // Dim non-triumvirate nodes
+          }
+        }
+        else if (triumvirateActive) {
+          if (!triumvirateNodeSet.has(node.id)) {
+            nodeColor.multiplyScalar(0.2); // Dim non-triumvirate nodes
+          }
+        } else if (isSelected) {
           nodeColor.multiplyScalar(1.5); // Lighter shade
         } else if (isConnected) {
           nodeColor.multiplyScalar(0.5); // Darker shade
@@ -539,7 +564,9 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
                   // Determine if this node is clickable using the same logic as onClick
                   let isClickable = false;
                   
-                  if (isInitialChoicePhase) {
+                  if (triumvirateActive) {
+                    isClickable = triumvirateNodeSet.has(node.id);
+                  } else if (isInitialChoicePhase) {
                     // In initial choice phase, only designated starting nodes are clickable
                     isClickable = isDesignatedStartingNode;
                   } else {
