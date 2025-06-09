@@ -1,4 +1,4 @@
- import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import {
   nodeHovered,
   nodeUnhovered,
@@ -12,7 +12,7 @@ import { navigateToNode } from '../../store/slices/readerSlice';
 import { visitNode } from '../../store/slices/nodesSlice';
 import { AppDispatch } from '../../store';
 import { ConstellationNode, NodePositions } from '../../types';
-import { forwardRef, useMemo, useRef } from 'react';
+import { forwardRef, useMemo, useRef, useState } from 'react';
 import { Color, InstancedMesh, ShaderMaterial } from 'three';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
@@ -186,9 +186,7 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
     'arch-discovery': new Color('#66ff66'), // Green
     'algo-awakening': new Color('#6666ff'), // Blue
     'human-discovery': new Color('#ff6666'), // Red
-  }), []);
-
-  const connectedNodeIds = useMemo(() => {
+  }), []);  const connectedNodeIds = useMemo(() => {
     if (isInitialChoicePhase || triumvirateActive) return triumvirateNodeSet;
     if (!selectedNodeId) return new Set<string>();
     const connected = new Set<string>();
@@ -198,6 +196,9 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
     });
     return connected;
   }, [selectedNodeId, connections, triumvirateActive, triumvirateNodeSet, isInitialChoicePhase]);
+
+  // State to track current node positions for positioning groups
+  const [groupPositions, setGroupPositions] = useState<{[key: string]: [number, number, number]}>({});
 
   // Create refs for accessing objects in the scene
   const materialRefs = useRef<ShaderMaterial[]>([]);
@@ -331,30 +332,32 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
         if (forceMesh) {
           forceMesh.visible = isImportantNode;
         }
-          
-        if (shouldUpdate) {
-          // CRITICAL FIX: Use synchronized positions from the position synchronizer
+            if (shouldUpdate) {
+          // CRITICAL FIX: Since groups are positioned, mesh stays at origin within group
           const syncedPos = currentPositions[node.id];
           
           if (syncedPos) {
-            // Use the synchronized position directly - NO additional noise calculation
-            nodeMesh.position.set(syncedPos[0], syncedPos[1], syncedPos[2]);
+            // Don't update mesh position - it's handled by group positioning in render
+            // Just ensure the mesh is visible and at origin within its group
+            nodeMesh.position.set(0, 0, 0);
           } else {
             // Fallback to original position if synchronized position is not available
             console.warn(`NodesInstanced: Missing synchronized position for node ${node.id}`);
-            nodeMesh.position.set(origPos[0], origPos[1], origPos[2]);
+            nodeMesh.position.set(0, 0, 0);
           }
           
           // Update force field position only if it exists and node is important
           const forceMesh = forceFieldMeshRefs.current[i];
           if (forceMesh && isImportantNode) {
             forceMesh.visible = true;
-            forceMesh.position.copy(nodeMesh.position);
+            forceMesh.position.set(0, 0, 0); // Also at origin within group
           } else if (forceMesh) {
             forceMesh.visible = false;
-          }
-        }
+          }        }
       }
+      
+      // Update group positions for next render
+      setGroupPositions({ ...currentPositions });
       
       // No need to update visible node count since we removed the display
     }
@@ -379,21 +382,31 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
       {nodes.map((node, index) => {
         const isSelected = selectedNodeId === node.id;
         const isConnected = connectedNodeIds.has(node.id);
-        const isHovered = hoveredNodeId === node.id;
-
-        let isDesignatedStartingNode = false;
+        const isHovered = hoveredNodeId === node.id;        let isDesignatedStartingNode = false;
         let labelText = '';
-
+        
         if (isInitialChoicePhase) {
           if (node.contentSource === 'arch-discovery.md') {
             isDesignatedStartingNode = true;
-            labelText = 'Choice';
+            labelText = 'The Archaeologist';
           } else if (node.contentSource === 'algo-awakening.md') {
             isDesignatedStartingNode = true;
-            labelText = 'Awakening';
+            labelText = 'The Algorithm';
           } else if (node.contentSource === 'human-discovery.md') {
             isDesignatedStartingNode = true;
-            labelText = 'Discovery';
+            labelText = 'The Last Human';
+          }
+        }
+        
+        // Add triumvirate text labels
+        let triumvirateText = '';
+        if (triumvirateActive && triumvirateNodes.includes(node.id)) {
+          if (node.id === 'arch-discovery') {
+            triumvirateText = 'Discovery';
+          } else if (node.id === 'algo-awakening') {
+            triumvirateText = 'Awakening';
+          } else if (node.id === 'human-discovery') {
+            triumvirateText = 'Choice';
           }
         }
         
@@ -428,29 +441,44 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
           // This logic might need refinement based on how visual effects are combined.
           // If it's a starting node, we might want its base color to be more prominent.
           // Example: nodeColor.multiplyScalar(1.1); // Slightly brighter if it's a starting node
-        }
+        }        // The main node group's position is determined by synchronized positions,
+        // and individual elements within this group (like the sphere and text) will be positioned relatively.
+        const groupPosition = groupPositions[node.id] || originalPositions.current[node.id] || [0, 0, 0];
         
-        // The main node group's position is determined by nodePositions,
-        // but individual elements within this group (like the sphere and text) will be positioned relatively.
         return (
           <group
-            key={node.id}
-            position={[0, 0, 0]} // CRITICAL FIX: Group stays at origin, mesh handles all positioning
+            key={node.id}            position={groupPosition} // Position group at the node's current position
             userData={{ nodeId: node.id }} // Add nodeId to userData for connection positioning
-          >
-            {isDesignatedStartingNode && isInitialChoicePhase && !props.isMinimap && labelText && (
+          >{isDesignatedStartingNode && isInitialChoicePhase && !triumvirateActive && !props.isMinimap && labelText && node.visitCount === 0 && (
               <Text
-                position={[0, 1.6, 0]} // Position above the larger node sphere
-                fontSize={0.35} // Slightly increased font size
+                position={[0, 2.2, 0]} // Position higher above the node sphere
+                fontSize={0.4} // Larger font size for better visibility
                 color="white"
                 anchorX="center"
                 anchorY="middle"
-                outlineWidth={0.02}
+                outlineWidth={0.03}
                 outlineColor="#000000"
                 material-depthTest={false} // Ensures text is visible
                 material-transparent={true}
+                fontWeight="bold"
               >
                 {labelText}
+              </Text>
+            )}            {/* Triumvirate text labels */}
+            {triumvirateActive && !props.isMinimap && triumvirateText && (
+              <Text
+                position={[0, 2.2, 0]} // Position above the node sphere (relative to the group)
+                fontSize={0.6} // Larger font size for better visibility
+                color="white"
+                anchorX="center"
+                anchorY="middle"
+                outlineWidth={0.05}
+                outlineColor="#000000"
+                material-depthTest={false} // Ensures text is visible
+                material-transparent={true}
+                fontWeight="bold"
+              >
+                {triumvirateText}
               </Text>
             )}
 

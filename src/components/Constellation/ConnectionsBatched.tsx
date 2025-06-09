@@ -13,6 +13,8 @@ interface ConnectionsBatchedProps {
     getCurrentPositions: () => { [key: string]: [number, number, number] };
   };
   isMinimap?: boolean;
+  triumvirateActive?: boolean;
+  triumvirateNodes?: string[];
 }
 
 // --- Reusable utility objects to prevent reallocation in the render loop ---
