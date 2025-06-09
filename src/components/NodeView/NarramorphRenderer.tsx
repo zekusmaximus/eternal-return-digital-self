@@ -90,7 +90,7 @@ const NarramorphRenderer: React.FC<NarramorphRendererProps> = memo(({ nodeId, on
     return () => {
       window.removeEventListener('error', handleWebGLError);
     };
-  }, []);
+  }, [isVisible, onVisibilityChange]);
 
   // Setup intersection observer for visibility detection with guaranteed initial visibility
   useEffect(() => {
@@ -115,9 +115,15 @@ const NarramorphRenderer: React.FC<NarramorphRendererProps> = memo(({ nodeId, on
     // Create observer with enhanced debouncing to prevent too many updates
     let visibilityTimeout: number | null = null;
     let validationTimeout: number | null = null;
+    let isComponentMounted = true;
     
     observerRef.current = new IntersectionObserver(
       (entries) => {
+        // Early exit if component is unmounted
+        if (!isComponentMounted || !contentRef.current) {
+          return;
+        }
+        
         const isNowVisible = entries[0]?.isIntersecting ?? true;
         const now = Date.now();
         
@@ -126,15 +132,16 @@ const NarramorphRenderer: React.FC<NarramorphRendererProps> = memo(({ nodeId, on
         
         // Enhanced throttling with multiple validation checks
         // 1. Visibility must have truly changed
-        // 2. Sufficient time must have passed since last change (2 seconds minimum)
-        // 3. Cannot have more than 5 visibility changes in 10 seconds
+        // 2. Sufficient time must have passed since last change (3 seconds minimum)
+        // 3. Cannot have more than 3 visibility changes in 15 seconds
         const timeSinceLastChange = now - lastVisibilityChangeRef.current;
-        const tooManyChanges = visibilityChangeCountRef.current > 5 && timeSinceLastChange < 10000;
+        const tooManyChanges = visibilityChangeCountRef.current > 3 && timeSinceLastChange < 15000;
         
         if (isVisible !== isNowVisible &&
             contentRef.current &&
-            timeSinceLastChange > 2000 && // Increased from 1s to 2s
-            !tooManyChanges) {
+            timeSinceLastChange > 3000 && // Increased from 2s to 3s
+            !tooManyChanges &&
+            isComponentMounted) {
             
           // Cancel any pending visibility updates
           if (visibilityTimeout) {
@@ -147,16 +154,19 @@ const NarramorphRenderer: React.FC<NarramorphRendererProps> = memo(({ nodeId, on
           // Log potential visibility change
           console.log(`[NarramorphRenderer] Potential visibility change detected: ${isVisible} -> ${isNowVisible}`);
           
-          // Use a longer debounce time to prevent rapid cycling (increased from 500ms to 800ms)
+          // Use a longer debounce time to prevent rapid cycling (increased to 1200ms)
           visibilityTimeout = window.setTimeout(() => {
             // Double-check that visibility truly changed and element still exists
             if (isVisible !== isNowVisible &&
                 contentRef.current &&
-                previousVisibilityRef.current === isVisible) {
+                previousVisibilityRef.current === isVisible &&
+                isComponentMounted) {
                 
               // Schedule final validation check after a short delay
               validationTimeout = window.setTimeout(() => {
                 // Final verification that visibility state is consistent
+                if (!isComponentMounted) return;
+                
                 const finalCheck = entries[0]?.isIntersecting ?? true;
                 if (finalCheck === isNowVisible) {
                   // Update timestamp and count
@@ -164,15 +174,19 @@ const NarramorphRenderer: React.FC<NarramorphRendererProps> = memo(({ nodeId, on
                   visibilityChangeCountRef.current += 1;
                   
                   // Update state only after multiple validations
-                  setIsVisible(isNowVisible);
+                  if (isComponentMounted) {
+                    setIsVisible(isNowVisible);
+                  }
                   
-                  // Reset change counter after 10 seconds of stability
+                  // Reset change counter after 15 seconds of stability
                   setTimeout(() => {
-                    visibilityChangeCountRef.current = 0;
-                  }, 10000);
+                    if (isComponentMounted) {
+                      visibilityChangeCountRef.current = 0;
+                    }
+                  }, 15000);
                   
                   // Call the visibility change callback if provided
-                  if (onVisibilityChange) {
+                  if (onVisibilityChange && isComponentMounted) {
                     console.log("[NarramorphRenderer] Calling onVisibilityChange:", isNowVisible, "Previous:", isVisible);
                     onVisibilityChange(isNowVisible);
                   }
@@ -180,32 +194,34 @@ const NarramorphRenderer: React.FC<NarramorphRendererProps> = memo(({ nodeId, on
                   console.log("[NarramorphRenderer] Visibility state inconsistent - ignoring change");
                 }
                 validationTimeout = null;
-              }, 300); // Wait 300ms for final validation
+              }, 500); // Increased validation delay
             }
             
-            setMetrics(prev => ({
-              ...prev,
-              visibilityChanges: prev.visibilityChanges + 1
-            }));
-            
-            // Inform the transformation service about visibility changes
-            // But only after validation checks pass
-            if (node?.id) {
-              transformationService.setContentVisibility(
-                node.id,
-                isNowVisible,
-                node.id === nodeId ? 2 : 1
-              );
-            }
-            
-            // Force a re-render when becoming visible again
-            // But only when state is stable
-            if (isNowVisible) {
-              setRenderKey(prev => prev + 1);
+            if (isComponentMounted) {
+              setMetrics(prev => ({
+                ...prev,
+                visibilityChanges: prev.visibilityChanges + 1
+              }));
+              
+              // Inform the transformation service about visibility changes
+              // But only after validation checks pass
+              if (node?.id) {
+                transformationService.setContentVisibility(
+                  node.id,
+                  isNowVisible,
+                  node.id === nodeId ? 2 : 1
+                );
+              }
+              
+              // Force a re-render when becoming visible again
+              // But only when state is stable
+              if (isNowVisible) {
+                setRenderKey(prev => prev + 1);
+              }
             }
             
             visibilityTimeout = null;
-          }, 800); // Increased debounce time to prevent cascading updates
+          }, 1200); // Increased debounce time to prevent cascading updates
         }
       },
       {
@@ -216,25 +232,34 @@ const NarramorphRenderer: React.FC<NarramorphRendererProps> = memo(({ nodeId, on
     );
     
     // Start observing
-    if (contentRef.current) {
+    if (contentRef.current && isComponentMounted) {
       observerRef.current.observe(contentRef.current);
     }
     
     // Enhanced cleanup
     return () => {
+      isComponentMounted = false;
+      
       if (visibilityTimeout) {
         window.clearTimeout(visibilityTimeout);
+        visibilityTimeout = null;
       }
       if (validationTimeout) {
         window.clearTimeout(validationTimeout);
+        validationTimeout = null;
       }
-      observerRef.current?.disconnect();
-      observerRef.current = null;
       
-      // Log disconnection for debugging
-      console.log('[NarramorphRenderer] Intersection observer disconnected');
+      if (observerRef.current) {
+        try {
+          observerRef.current.disconnect();
+          console.log('[NarramorphRenderer] Intersection observer disconnected cleanly');
+        } catch (error) {
+          console.warn('[NarramorphRenderer] Error disconnecting observer:', error);
+        }
+        observerRef.current = null;
+      }
     };
-  }, [node?.id, nodeId, onVisibilityChange, isVisible]); // Added isVisible to satisfy exhaustive deps rule
+  }, [node?.id, nodeId, isVisible, onVisibilityChange]); // Added isVisible and onVisibilityChange to deps
   
   // Prioritize transformations based on visibility and importance
   const prioritizedTransformations = useMemo(() => {

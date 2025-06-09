@@ -3,6 +3,6 @@
  * to maintain backward compatibility with existing imports.
  */
 
-import ConnectionsBatched from './ConnectionsBatched';
+import { ConnectionsBatched } from './ConnectionsBatched';
 
-export default ConnectionsBatched;
+export { ConnectionsBatched };

@@ -1,4 +1,4 @@
-import { useDispatch, useSelector } from 'react-redux';
+ import { useDispatch, useSelector } from 'react-redux';
 import {
   nodeHovered,
   nodeUnhovered,
@@ -6,7 +6,7 @@ import {
   selectSelectedNodeId,
   nodeSelected,
   setViewMode,
-  setInitialChoicePhaseCompleted,
+  // Removed incorrect import
 } from '../../store/slices/interfaceSlice';
 import { navigateToNode } from '../../store/slices/readerSlice';
 import { visitNode } from '../../store/slices/nodesSlice';
@@ -16,41 +16,9 @@ import { forwardRef, useMemo, useRef, useEffect } from 'react';
 import { Color, InstancedMesh, ShaderMaterial, Frustum, Matrix4, Vector3 } from 'three';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
+import type { ThreeEvent } from '@react-three/fiber';
 import { Text } from '@react-three/drei';
 
-// Cached simple noise function implementation
-// Using a more optimized approach with pre-computed values
-const noise3D = (() => {
-  // Pre-compute some frequency values
-  const freqX = 0.3;
-  const freqY = 0.5;
-  const freqZ = 0.2;
-  const timeScaleX = 0.7;
-  const timeScaleY = 0.3;
-  const timeScaleZ = 0.5;
-  const amplitude = 0.3;
-  
-  // Create lookup tables for sin values to reduce calculations
-  const LOOKUP_SIZE = 256;
-  const sinLookup = new Float32Array(LOOKUP_SIZE);
-  for (let i = 0; i < LOOKUP_SIZE; i++) {
-    sinLookup[i] = Math.sin((i / LOOKUP_SIZE) * Math.PI * 2);
-  }
-  
-  // Get sin value from lookup table
-  const fastSin = (val: number): number => {
-    // Normalize value to 0-1 range
-    const idx = Math.floor((val % (Math.PI * 2)) / (Math.PI * 2) * LOOKUP_SIZE) & (LOOKUP_SIZE - 1);
-    return sinLookup[idx];
-  };
-  
-  return (x: number, y: number, z: number, time: number): number => {
-    // Using faster calculation with lookup
-    return fastSin(x * freqX + time * timeScaleX) * amplitude +
-           fastSin(y * freqY + time * timeScaleY) * amplitude +
-           fastSin(z * freqZ + time * timeScaleZ) * amplitude;
-  };
-})();
 
 // Circuit pattern vertex shader
 const circuitVertexShader = `
@@ -157,6 +125,10 @@ interface NodesInstancedProps {
   clickableNodeIds?: string[];
   isMinimap?: boolean; // Flag to indicate if this is used in the minimap
   isInitialChoicePhase: boolean;
+  positionSynchronizer: {
+    updatePositions: (time: number, isMinimap?: boolean) => { [key: string]: [number, number, number] };
+    getCurrentPositions: () => { [key: string]: [number, number, number] };
+  };
 }
 
 // Define base colors for each triad - match exact character names from nodesSlice.ts
@@ -287,6 +259,7 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
     onNodeClick,
     clickableNodeIds,
     isInitialChoicePhase,
+    positionSynchronizer,
   } = props;
   const dispatch = useDispatch<AppDispatch>();
   
@@ -351,6 +324,9 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
     if (!visibilityManagerRef.current) {
       visibilityManagerRef.current = new NodeVisibilityManager(camera);
     }
+
+    // Get synchronized positions from the position synchronizer
+    const currentPositions = positionSynchronizer.updatePositions(time, props.isMinimap);
     
     // Update frustum for visibility checks (less frequently)
     if (visibilityManagerRef.current.shouldUpdate(time)) {
@@ -437,10 +413,12 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
       });
     }
     
-    // Throttle the expensive noise-based position updates
-    // More aggressive throttling for nodes that are not important
+    // SYNC FIX: Ensure we update positions on the same frames as ConnectionsBatched
+    // This is critical for keeping nodes and connections aligned
     const timeSinceLastPositionUpdate = time - lastUpdatePositionsTime.current;
-    const shouldUpdatePositions = timeSinceLastPositionUpdate > 0.1; // 100ms
+    // CRITICAL SYNC FIX: Use same update interval as ConnectionsBatched
+    const UPDATE_INTERVAL = 0.15; // 150ms in seconds
+    const shouldUpdatePositions = timeSinceLastPositionUpdate >= UPDATE_INTERVAL;
     
     if (shouldUpdatePositions) {
       lastUpdatePositionsTime.current = time;
@@ -507,28 +485,6 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
           forceMesh.visible = isImportantNode;
         }
         
-        // Adjust noise amount based on detail level
-        let noiseAmount = 0.03; // Default
-        
-        switch (detailLevel) {
-          case 'high':
-            // Full detail for important nodes
-            noiseAmount = 0.03;
-            break;
-          case 'medium':
-            // Medium detail for medium distance
-            noiseAmount = 0.02;
-            break;
-          case 'low':
-            // Low detail for far distance
-            noiseAmount = 0.01;
-            break;
-        }
-        
-        // Special case for important nodes - always high detail
-        if (isImportantNode) {
-          noiseAmount = 0.03;
-        }
         
         // More consistent update frequency with prioritization for important nodes
         // Always update important nodes and those in high/medium detail levels
@@ -539,30 +495,17 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
           (detailLevel === 'low' && frameCount.current % 3 === 0);  // Low every 3rd frame
           
         if (shouldUpdate) {
-          // Apply subtle noise-based movement - with adaptive amplitude
-          // Calculate noise values
-          const nx = noise3D(origPos[0], origPos[1], origPos[2], time * 0.3);
-          const ny = noise3D(origPos[0] + 100, origPos[1] + 100, origPos[2] + 100, time * 0.25);
-          const nz = noise3D(origPos[0] + 200, origPos[1] + 200, origPos[2] + 200, time * 0.2);
+          // CRITICAL FIX: Use synchronized positions from the position synchronizer
+          const syncedPos = currentPositions[node.id];
           
-          // Check if this is the minimap view
-          if (props.isMinimap) {
-            // For minimap: completely fixed positions - no movement at all
-            // This provides absolute stability for the minimap view
-            nodeMesh.position.set(
-              origPos[0], // Exact original X position - no movement
-              origPos[1], // Exact original Y position - no movement
-              origPos[2]  // Exact original Z position - no movement
-            );
+          if (syncedPos) {
+            // Use the synchronized position directly - NO additional noise calculation
+            nodeMesh.position.set(syncedPos[0], syncedPos[1], syncedPos[2]);
           } else {
-            // For main view: full 3D movement
-            nodeMesh.position.set(
-              origPos[0] + nx * noiseAmount,
-              origPos[1] + ny * noiseAmount,
-              origPos[2] + nz * noiseAmount
-            );
+            // Fallback to original position if synchronized position is not available
+            console.warn(`NodesInstanced: Missing synchronized position for node ${node.id}`);
+            nodeMesh.position.set(origPos[0], origPos[1], origPos[2]);
           }
-          nodeMesh.matrixAutoUpdate = true;
           
           // Update force field position only if it exists and node is important
           const forceMesh = forceFieldMeshRefs.current[i];
@@ -596,7 +539,6 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
         />
       )}
       {nodes.map((node, index) => {
-        const position = nodePositions[node.id] || [0, 0, 0];
         const isSelected = selectedNodeId === node.id;
         const isConnected = connectedNodeIds.has(node.id);
         const isHovered = hoveredNodeId === node.id;
@@ -639,10 +581,14 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
         // The main node group's position is determined by nodePositions,
         // but individual elements within this group (like the sphere and text) will be positioned relatively.
         return (
-          <group key={node.id} position={position}>
+          <group
+            key={node.id}
+            position={[0, 0, 0]} // CRITICAL FIX: Group stays at origin, mesh handles all positioning
+            userData={{ nodeId: node.id }} // Add nodeId to userData for connection positioning
+          >
             {isDesignatedStartingNode && isInitialChoicePhase && !props.isMinimap && labelText && (
               <Text
-                position={[0, 0.8, 0]} // Position slightly above the node sphere
+                position={[0, 1.6, 0]} // Position above the larger node sphere
                 fontSize={0.35} // Slightly increased font size
                 color="white"
                 anchorX="center"
@@ -666,7 +612,7 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
                 }}
                 // Position is now relative to the parent group, so [0,0,0] for the force field center
                 position={[0, 0, 0]}>
-                <sphereGeometry args={[0.7, 16, 16]} />
+                <sphereGeometry args={[1.4, 16, 16]} />
                 <shaderMaterial
                   ref={(material) => {
                     if (material) {
@@ -692,39 +638,19 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
                   nodeMeshRefs.current[index] = mesh;
                 }
               }}
-                // Position is now relative to the parent group, so [0,0,0] for the node sphere center
-                position={[0, 0, 0]}
-              onClick={(e) => {
-                e.stopPropagation();
-                
+              // Position is now relative to the parent group, so [0,0,0] for the node sphere center
+              position={[0, 0, 0]}
+              onClick={(e: ThreeEvent<MouseEvent>) => {
+                if (e.stopPropagation) e.stopPropagation();
+
                 // Emit custom event to hide tooltip when a node is clicked
                 const nodeUnhoverEvent = new CustomEvent('node-unhover');
                 window.dispatchEvent(nodeUnhoverEvent);
 
                 if (isInitialChoicePhase) {
                   if (isDesignatedStartingNode) {
-                    dispatch(setInitialChoicePhaseCompleted());
-                    // Proceed with navigation for starting node
-                    dispatch(nodeSelected(node.id));
-                    dispatch(visitNode(node.id));
-                    dispatch(setViewMode('reading'));
-                    dispatch(navigateToNode({
-                      nodeId: node.id,
-                      character: node.character,
-                      temporalValue: node.temporalValue,
-                      attractors: node.strangeAttractors,
-                    }));
-                  }
-                  // If in initial choice phase but not a designated starting node, do nothing.
-                } else {
-                  // Normal click logic (outside initial choice phase)
-                  if (onNodeClick) { // This path is typically for MiniConstellation
-                    if (clickableNodeIds && !clickableNodeIds.includes(node.id)) {
-                      return;
-                    }
-                    onNodeClick(node.id);
-                  } else { // This path is for the main ConstellationView
-                    if (selectedNodeId === null) { // If no node is selected, any node can be clicked
+                    // Dispatch actions in sequence with proper error handling
+                    try {
                       dispatch(nodeSelected(node.id));
                       dispatch(visitNode(node.id));
                       dispatch(setViewMode('reading'));
@@ -734,29 +660,51 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
                         temporalValue: node.temporalValue,
                         attractors: node.strangeAttractors,
                       }));
-                    } else { // If a node is already selected, only connected nodes can be clicked
-                      const isConnectedToCurrentSelected = connections.some(
-                        (c) =>
-                          (c.start === selectedNodeId && c.end === node.id) ||
-                          (c.start === node.id && c.end === selectedNodeId)
-                      );
-                      if (isConnectedToCurrentSelected) {
-                        dispatch(nodeSelected(node.id));
-                        dispatch(visitNode(node.id));
-                        dispatch(setViewMode('reading'));
-                        dispatch(navigateToNode({
-                          nodeId: node.id,
-                          character: node.character,
-                          temporalValue: node.temporalValue,
-                          attractors: node.strangeAttractors,
-                        }));
-                      }
+                    } catch (error) {
+                      console.error('Navigation error:', error);
+                    }
+                  }
+                  return; // Exit early if in initial choice phase
+                }
+                // Normal click logic (outside initial choice phase)
+                if (onNodeClick) { // This path is typically for MiniConstellation
+                  if (clickableNodeIds && !clickableNodeIds.includes(node.id)) {
+                    return;
+                  }
+                  onNodeClick(node.id);
+                } else { // This path is for the main ConstellationView
+                  if (selectedNodeId === null) { // If no node is selected, any node can be clicked
+                    dispatch(nodeSelected(node.id));
+                    dispatch(visitNode(node.id));
+                    dispatch(setViewMode('reading'));
+                    dispatch(navigateToNode({
+                      nodeId: node.id,
+                      character: node.character,
+                      temporalValue: node.temporalValue,
+                      attractors: node.strangeAttractors,
+                    }));
+                  } else { // If a node is already selected, only connected nodes can be clicked
+                    const isConnectedToCurrentSelected = connections.some(
+                      (c) =>
+                        (c.start === selectedNodeId && c.end === node.id) ||
+                        (c.start === node.id && c.end === selectedNodeId)
+                    );
+                    if (isConnectedToCurrentSelected) {
+                      dispatch(nodeSelected(node.id));
+                      dispatch(visitNode(node.id));
+                      dispatch(setViewMode('reading'));
+                      dispatch(navigateToNode({
+                        nodeId: node.id,
+                        character: node.character,
+                        temporalValue: node.temporalValue,
+                        attractors: node.strangeAttractors,
+                      }));
                     }
                   }
                 }
               }}
-              onPointerOver={(e) => {
-                e.stopPropagation();
+              onPointerOver={(e: ThreeEvent<PointerEvent>) => {
+                if (e.stopPropagation) e.stopPropagation();
                 if (node.id !== hoveredNodeId) {
                   dispatch(nodeHovered(node.id));
                   
@@ -774,8 +722,8 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
                   window.dispatchEvent(nodeHoverEvent);
                 }
               }}
-              onPointerOut={(e) => {
-                e.stopPropagation();
+              onPointerOut={(e: ThreeEvent<PointerEvent>) => {
+                if (e.stopPropagation) e.stopPropagation();
                 dispatch(nodeUnhovered());
                 
                 // Emit custom event for tooltip hiding
@@ -784,8 +732,8 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
               }}
               
               // Fix for stuck hover: Add pointer leave event
-              onPointerLeave={(e) => {
-                e.stopPropagation();
+              onPointerLeave={(e: ThreeEvent<PointerEvent>) => {
+                if (e.stopPropagation) e.stopPropagation();
                 dispatch(nodeUnhovered());
                 
                 // Emit custom event for tooltip hiding
@@ -796,9 +744,9 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
               {/* Use lower poly geometry for distant nodes */}
               {/* Performance optimization: Use lower poly geometry for distant nodes */}
               {!isSelected && !isHovered ? (
-                <octahedronGeometry args={[0.5, 0]} /> // Lower poly for distant nodes
+                <octahedronGeometry args={[1.0, 0]} /> // Lower poly for distant nodes - doubled size
               ) : (
-                <sphereGeometry args={[0.5, 8, 8]} /> // Higher detail for selected/hovered
+                <sphereGeometry args={[1.0, 8, 8]} /> // Higher detail for selected/hovered - doubled size
               )}
               <shaderMaterial
                 ref={(material) => {

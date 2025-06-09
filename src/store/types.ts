@@ -153,6 +153,7 @@ export interface RootState {
     transitionSpeed: number;
     helpModalOpen: boolean;
     aboutModalOpen: boolean;
+    isInitialChoicePhase: boolean;
   };
 }
 

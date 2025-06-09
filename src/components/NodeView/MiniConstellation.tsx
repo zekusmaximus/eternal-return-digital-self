@@ -5,7 +5,7 @@ import { nodeSelected } from '../../store/slices/interfaceSlice';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Bounds } from '@react-three/drei';
 import { NodesInstanced } from '../Constellation/NodesInstanced';
-import ConnectionsBatched from '../Constellation/ConnectionsBatched';
+import { ConnectionsBatched } from '../Constellation/ConnectionsBatched';
 import { InstancedMesh } from 'three';
 
 interface MiniConstellationProps {
@@ -42,7 +42,6 @@ const MiniConstellation: React.FC<MiniConstellationProps> = ({ currentNodeId }) 
   }, [canvasId]);
 
   const mappedConnections = useMemo(() => connections.map(c => ({ source: c.start, target: c.end })), [connections]);
-
   const clickableNodeIds = useMemo(() => {
     const connectedIds = new Set<string>();
     connections.forEach(conn => {
@@ -63,40 +62,55 @@ const MiniConstellation: React.FC<MiniConstellationProps> = ({ currentNodeId }) 
     const positions: { [key: string]: [number, number, number] } = {};
     nodes.forEach((node, index) => {
       const numNodes = nodes.length;
-      // Reduced radius to ensure nodes fit better in circle
-      const radius = 4;
+      // Optimized radius for the container size
+      const radius = 4.5;
       
-      // Using a Fibonacci sphere pattern for more evenly distributed points
-      const offset = 2.0 / numNodes;
-      const increment = Math.PI * (3.0 - Math.sqrt(5.0));
+      // Using a circular arrangement for better visibility in small space
+      const angle = (index / numNodes) * Math.PI * 2;
       
-      // Calculate position on sphere using fibonacci distribution
-      const y = ((index * offset) - 1) + (offset / 2);
-      const r = Math.sqrt(1 - y * y);
-      const phi = index * increment;
+      // Calculate position in a mostly flat circle
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      // Minimal vertical variation to keep nodes visible
+      const y = Math.sin(angle * 2) * (radius * 0.1); // Very slight vertical variation
       
-      // Keep nodes in a planar arrangement for better visibility in small circle
-      const x = Math.cos(phi) * r * radius;
-      const z = Math.sin(phi) * r * radius;
-      // Slightly flatten the Y dimension to fit better in circle
-      positions[node.id] = [x, y * radius * 0.5, z];
+      positions[node.id] = [x, y, z];
     });
     return positions;
   }, [nodes]);
+
+  // Create position synchronizer for MiniConstellation
+  const positionSynchronizer = useMemo(() => ({
+    updatePositions: (_time: number, isMinimap?: boolean) => {
+      // For minimap, return fixed positions without any movement
+      if (isMinimap) {
+        return nodePositions;
+      }
+      // For main view, this wouldn't be used in MiniConstellation
+      return nodePositions;
+    },
+    getCurrentPositions: () => nodePositions
+  }), [nodePositions]);
 
   return (
     <div
       ref={containerRef}
       className="mini-constellation-container"
       style={{
-        width: '120px',
-        height: '120px',
+        width: '160px',  // Slightly larger for better visibility
+        height: '160px', // Slightly larger for better visibility
         overflow: 'hidden',
-        position: 'relative',
-        borderRadius: '50%', // Make it circular for better containment
-        cursor: isInteracting ? 'grabbing' : 'grab', // Show grab cursor to indicate draggability
+        position: 'absolute',
+        bottom: '20px',
+        right: '20px',
+        borderRadius: '50%',
+        cursor: isInteracting ? 'grabbing' : 'grab',
+        transition: 'transform 0.3s ease',
         boxShadow: '0 0 10px rgba(0,0,0,0.3)',
-        transition: 'box-shadow 0.3s ease'
+        backgroundColor: 'rgba(0,0,0,0.3)',
+        border: '2px solid rgba(255,255,255,0.2)',
+        zIndex: 1000, // Ensure it's above other elements
+        pointerEvents: 'auto' // Ensure pointer events work
       }}
       // Add separate onMouseEnter/onMouseLeave for hover effects
       onMouseEnter={(e) => {
@@ -109,12 +123,13 @@ const MiniConstellation: React.FC<MiniConstellationProps> = ({ currentNodeId }) 
     >
       <Canvas
         id={canvasId}
-        frameloop="demand"  // Only render when needed to reduce jitter
+        frameloop="always"  // Always render for smooth interaction
         camera={{
-          position: [0, 0, 12], // Moved camera closer for better interaction
-          fov: 25,              // Wider field of view for better visibility
+          position: [0, 0, 12], // Pull camera back further for complete view
+          fov: 45,              // Balanced field of view
           near: 0.1,
-          far: 100
+          far: 100,
+          zoom: 1.0             // Reset zoom to default
         }}
         gl={{
           antialias: true,
@@ -125,9 +140,10 @@ const MiniConstellation: React.FC<MiniConstellationProps> = ({ currentNodeId }) 
         dpr={[1, 2]} // Limit pixel ratio to prevent performance issues
         performance={{ min: 0.5 }} // Allow reducing quality for better performance
       >
-        <ambientLight intensity={0.5} />
-        <pointLight position={[10, 10, 10]} />
-        <Bounds fit clip observe scale={0.65}> {/* Reduced scale to ensure nodes fit inside circle */}
+        <ambientLight intensity={0.8} />
+        <pointLight position={[10, 10, 10]} intensity={1.0} />
+        <pointLight position={[-10, -10, 10]} intensity={0.5} />
+        <Bounds fit clip observe scale={0.7}> {/* Even smaller scale to ensure all nodes are visible */}
           <NodesInstanced
             ref={instancedMeshRef}
             nodes={nodes}
@@ -137,8 +153,15 @@ const MiniConstellation: React.FC<MiniConstellationProps> = ({ currentNodeId }) 
             onNodeClick={handleNodeClick}
             clickableNodeIds={clickableNodeIds}
             isMinimap={true}
+            isInitialChoicePhase={false}
+            positionSynchronizer={positionSynchronizer}
           />
-          <ConnectionsBatched ref={instancedMeshRef} connections={mappedConnections} nodePositions={nodePositions} />
+          <ConnectionsBatched 
+            ref={instancedMeshRef} 
+            connections={mappedConnections} 
+            nodePositions={nodePositions}
+            positionSynchronizer={positionSynchronizer}
+          />
         </Bounds>
         
         {/* Simple optimized rotation controls */}
@@ -146,19 +169,19 @@ const MiniConstellation: React.FC<MiniConstellationProps> = ({ currentNodeId }) 
           <OrbitControls
             enableZoom={false}
             enablePan={false}
-            rotateSpeed={0.8}             // Higher speed for better responsiveness
+            rotateSpeed={0.8}             // Moderate speed for good control
             enableDamping={true}
-            dampingFactor={0.4}           // Lower damping for more direct control
+            dampingFactor={0.3}           // Less damping for more responsive feel
             
-            // Lock rotation to horizontal only
-            minPolarAngle={Math.PI / 2}   // 90 degrees - equator plane
-            maxPolarAngle={Math.PI / 2}   // 90 degrees - equator plane
+            // Allow reasonable vertical rotation
+            minPolarAngle={Math.PI / 4}   // 45 degrees from top
+            maxPolarAngle={Math.PI * 3/4} // 45 degrees from bottom
             
             // Allow full rotation around Y axis
             minAzimuthAngle={-Infinity}
             maxAzimuthAngle={Infinity}
             
-            // No auto-rotation
+            // Disable auto-rotation to allow manual control
             autoRotate={false}
             
             // Update interaction state for cursor feedback

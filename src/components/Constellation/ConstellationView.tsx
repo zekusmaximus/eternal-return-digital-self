@@ -1,13 +1,106 @@
 import { useSelector, useDispatch } from 'react-redux';
 import { selectConstellationNodes, selectConnections } from '../../store/slices/nodesSlice';
-import { setViewMode, selectIsInitialChoicePhase } from '../../store/slices/interfaceSlice';
+import { setViewMode } from '../../store/slices/interfaceSlice';
 import './ConstellationView.css';
-import { useMemo, useRef, lazy, Suspense, useState, useEffect } from 'react';
+import { useMemo, useRef, lazy, Suspense, useState, useEffect, useCallback } from 'react';
 import { InstancedMesh } from 'three';
 import * as THREE from 'three';
 import { Connection } from '../../types';
 import { webGLContextManager } from '../../services/WebGLContextManager';
 import { viewManager } from '../../services/ViewManager';
+
+// Centralized position management system
+class PositionSynchronizer {
+  private static instance: PositionSynchronizer;
+  private basePositions: { [key: string]: [number, number, number] } = {};
+  private currentPositions: { [key: string]: [number, number, number] } = {};
+  private lastUpdateTime: number = 0;
+  private updateCallbacks: Set<(positions: { [key: string]: [number, number, number] }) => void> = new Set();
+  private isUpdating: boolean = false;
+  
+  static getInstance(): PositionSynchronizer {
+    if (!PositionSynchronizer.instance) {
+      PositionSynchronizer.instance = new PositionSynchronizer();
+    }
+    return PositionSynchronizer.instance;
+  }
+  
+  setBasePositions(positions: { [key: string]: [number, number, number] }) {
+    this.basePositions = { ...positions };
+    this.currentPositions = { ...positions };
+  }
+  
+  updatePositions(time: number, isMinimap: boolean = false) {
+    if (this.isUpdating) return this.currentPositions;
+    
+    this.isUpdating = true;
+    const UPDATE_INTERVAL = 0.15; // 150ms in seconds
+    
+    if (time - this.lastUpdateTime >= UPDATE_INTERVAL) {
+      this.lastUpdateTime = time;
+      
+      // Calculate new positions with noise (same algorithm as before)
+      Object.keys(this.basePositions).forEach(nodeId => {
+        const basePos = this.basePositions[nodeId];
+        if (!basePos) return;
+        
+        if (isMinimap) {
+          // For minimap: completely fixed positions
+          this.currentPositions[nodeId] = [...basePos];
+        } else {
+          // For main view: apply very subtle movement
+          const nx = Math.sin(basePos[0] * 0.1 + time * 0.02) * 0.01;
+          const ny = Math.sin((basePos[1] + 100) * 0.1 + time * 0.02) * 0.01;
+          const nz = Math.sin((basePos[2] + 200) * 0.1 + time * 0.02) * 0.01;
+          
+          // Much smaller maximum offset to keep nodes more stable
+          const maxOffset = 0.01;
+          const xOffset = Math.min(Math.abs(nx), maxOffset) * Math.sign(nx);
+          const yOffset = Math.min(Math.abs(ny), maxOffset) * Math.sign(ny);
+          const zOffset = Math.min(Math.abs(nz), maxOffset) * Math.sign(nz);
+          
+          // Store the exact same position for all components
+          const newPos = [
+            basePos[0] + xOffset,
+            basePos[1] + yOffset,
+            basePos[2] + zOffset
+          ] as [number, number, number];
+          
+          this.currentPositions[nodeId] = newPos;
+        }
+      });
+      
+      // Notify all subscribers
+      this.updateCallbacks.forEach(callback => {
+        try {
+          callback({ ...this.currentPositions });
+        } catch (error) {
+          console.error('Error in position update callback:', error);
+        }
+      });
+    }
+    
+    this.isUpdating = false;
+    return this.currentPositions;
+  }
+  
+  getCurrentPositions() {
+    return { ...this.currentPositions };
+  }
+  
+  subscribeToUpdates(callback: (positions: { [key: string]: [number, number, number] }) => void) {
+    this.updateCallbacks.add(callback);
+    return () => this.updateCallbacks.delete(callback);
+  }
+  
+  reset() {
+    this.basePositions = {};
+    this.currentPositions = {};
+    this.lastUpdateTime = 0;
+    this.updateCallbacks.clear();
+    this.isUpdating = false;
+  }
+}
 
 // Dynamically import Three.js related dependencies
 // Use explicit path with extension to help TypeScript
@@ -44,25 +137,29 @@ const ConstellationView = () => {
   const [webGLError, setWebGLError] = useState<Error | null>(null);
   const nodes = useSelector(selectConstellationNodes);
   const connections = useSelector(selectConnections);
-  const isInitialChoicePhase = useSelector(selectIsInitialChoicePhase);
+  // Temporarily use a default value for isInitialChoicePhase to focus on connection alignment fix
+  const isInitialChoicePhase = false;
   const instancedMeshRef = useRef<InstancedMesh>(null!);
-  const [contextId, setContextId] = useState<string | null>(null);
+  const contextIdRef = useRef<string | null>(null);
   
-  // Register this component with ViewManager
+  // Register this component with ViewManager only once on mount/unmount
   useEffect(() => {
+    console.log('[ConstellationView] Component mounted');
     viewManager.registerViewMount('constellation', true);
     
     return () => {
       // Inform ViewManager when unmounting
+      console.log('[ConstellationView] Component unmounting');
       viewManager.registerViewMount('constellation', false);
       
       // Make sure to clean up WebGL context when unmounting
-      if (contextId) {
-        console.log(`[ConstellationView] Unmounting, disposing WebGL context: ${contextId}`);
-        webGLContextManager.disposeContext(contextId);
+      if (contextIdRef.current) {
+        console.log(`[ConstellationView] Unmounting, disposing WebGL context: ${contextIdRef.current}`);
+        webGLContextManager.disposeContext(contextIdRef.current);
+        contextIdRef.current = null;
       }
     };
-  }, [contextId]);
+  }, []); // Empty dependency array ensures this only runs on mount/unmount
 
   // Create formatted connections for ThreeJSComponents
   // Convert from {start, end} format to {source, target} format
@@ -75,6 +172,10 @@ const ConstellationView = () => {
     connections.map(c => ({ source: c.start, target: c.end } as Connection)),
   [connections]);
 
+  // Centralized position management
+  const positionSynchronizer = useRef(PositionSynchronizer.getInstance());
+  const [synchronizedPositions, setSynchronizedPositions] = useState<{ [key: string]: [number, number, number] }>({});
+  
   const nodePositions = useMemo(() => {
     // Debug
     console.log("Calculating positions for nodes:", nodes.length);
@@ -90,8 +191,8 @@ const ConstellationView = () => {
     // Generate distinct positions for each node in a spherical layout
     nodes.forEach((node, index) => {
       const numNodes = nodes.length;
-      // Reduce radius to fit within viewport better
-      const radius = 8;
+      // Increased radius to spread nodes out more
+      const radius = 15;
       
       // Fibonacci sphere algorithm for more even distribution
       const offset = 2.0 / numNodes;
@@ -107,11 +208,34 @@ const ConstellationView = () => {
       positions[node.id] = [x, y * radius, z];
     });
     
+    // Set base positions in synchronizer
+    positionSynchronizer.current.setBasePositions(positions);
+    
     return positions;
   }, [nodes]);
+  
+  // Subscribe to position updates
+  useEffect(() => {
+    const unsubscribe = positionSynchronizer.current.subscribeToUpdates((newPositions) => {
+      setSynchronizedPositions(newPositions);
+    });
+    
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+  
+  // Use synchronized positions if available, otherwise fall back to base positions
+  const finalNodePositions = Object.keys(synchronizedPositions).length > 0 ? synchronizedPositions : nodePositions;
 
-  // Handle WebGL context registration
-  const handleWebGLContextCreated = (renderer: THREE.WebGLRenderer) => {
+  // Handle WebGL context registration - memoized to prevent recreating on each render
+  const handleWebGLContextCreated = useCallback((renderer: THREE.WebGLRenderer) => {
+    // Don't re-register if we already have a context ID
+    if (contextIdRef.current) {
+      console.log(`[ConstellationView] Context already registered: ${contextIdRef.current}`);
+      return;
+    }
+    
     // Register with the WebGL context manager
     const id = webGLContextManager.registerContext(
       renderer,
@@ -129,9 +253,9 @@ const ConstellationView = () => {
       }
     );
     
-    setContextId(id);
+    contextIdRef.current = id;
     console.log(`[ConstellationView] Registered WebGL context: ${id}`);
-  };
+  }, []); // Empty dependency array ensures stable callback
 
   // Listen for application-wide WebGL context loss events
   useEffect(() => {
@@ -139,7 +263,7 @@ const ConstellationView = () => {
       const { contextId: lostContextId, type } = event.detail;
       
       // Only handle if this matches our context or is constellation type
-      if (contextId === lostContextId || type === 'constellation') {
+      if ((contextIdRef.current && contextIdRef.current === lostContextId) || type === 'constellation') {
         console.error("[ConstellationView] Received WebGL context loss event");
         setWebGLError(new Error("WebGL context lost - application event"));
       }
@@ -157,14 +281,14 @@ const ConstellationView = () => {
         handleContextLoss as EventListener
       );
     };
-  }, [contextId]);
+  }, []); // Empty dependency array - we use ref instead of state
 
   return (
     <div className="constellation-container">
       <Suspense fallback={<ConstellationLoading />}>
         <ThreeJSComponents
           nodes={nodes}
-          nodePositions={nodePositions}
+          nodePositions={finalNodePositions}
           connections={connectionObjects}
           mappedConnections={mappedConnections}
           instancedMeshRef={instancedMeshRef}
@@ -174,6 +298,7 @@ const ConstellationView = () => {
             console.error("[ConstellationView] WebGL error reported:", error);
             setWebGLError(error);
           }}
+          positionSynchronizer={positionSynchronizer.current}
         />
       </Suspense>
       

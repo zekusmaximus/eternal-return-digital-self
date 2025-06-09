@@ -1,13 +1,18 @@
 import React, { forwardRef, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { BufferGeometry, InstancedMesh, DoubleSide } from 'three';
-import { useAppSelector } from '../../store/hooks';
 import { Connection, NodePositions } from '../../types';
 import { useFrame } from '@react-three/fiber';
 
 interface ConnectionsBatchedProps {
   connections: Connection[];
   nodePositions: NodePositions;
+  selectedNodeId?: string | null;
+  hoveredNodeId?: string | null;
+  positionSynchronizer: {
+    updatePositions: (time: number, isMinimap?: boolean) => { [key: string]: [number, number, number] };
+    getCurrentPositions: () => { [key: string]: [number, number, number] };
+  };
 }
 
 // Connection line shader code for glowing effects
@@ -52,36 +57,14 @@ const connectionFragmentShader = `
 // Using forwardRef for API compatibility
 const ConnectionsBatched = forwardRef<InstancedMesh, ConnectionsBatchedProps>(
   (props, ref) => {
-    const { connections, nodePositions } = props;
-    console.log("ConnectionsBatched rendering with:", {
-      connectionCount: connections.length,
-      nodePositionsCount: Object.keys(nodePositions).length
-    });
-    
-    // We use our own lineSegmentsRef since we're actually using LineSegments, not InstancedMesh
-    // The forwardRef is just for API compatibility
-    const lineSegmentsRef = useRef<THREE.LineSegments>(null!);
-    
-    // Acknowledge forwarded ref with null - we don't actually use an InstancedMesh
-    // This is a proper use of the ref parameter required by forwardRef
-    React.useImperativeHandle(ref, () => null!);
+  const { connections, nodePositions, selectedNodeId, hoveredNodeId, positionSynchronizer } = props;
+  
+  // We use our own lineSegmentsRef since we're actually using LineSegments, not InstancedMesh
+  const lineSegmentsRef = useRef<THREE.LineSegments>(null!);
+  
+  // Acknowledge forwarded ref with null - we don't actually use an InstancedMesh
+  React.useImperativeHandle(ref, () => null!);
   const geometryRef = useRef<BufferGeometry>(null!);
-  
-  // Use refs directly instead of direct Redux state access to break circular dependency
-  const selectedNodeIdRef = useRef<string | null>(null);
-  const hoveredNodeIdRef = useRef<string | null>(null);
-  
-  // Create a one-time selector to get values initially and update refs
-  const getInterfaceState = useAppSelector(state => state.interface);
-  
-  // Update refs when Redux state changes but don't cause re-renders
-  useEffect(() => {
-    selectedNodeIdRef.current = getInterfaceState.selectedNodeId;
-  }, [getInterfaceState.selectedNodeId]);
-  
-  useEffect(() => {
-    hoveredNodeIdRef.current = getInterfaceState.hoveredNodeId;
-  }, [getInterfaceState.hoveredNodeId]);
   
   // Create a reference for the custom shader material
   const connectionMaterialRef = useRef<THREE.ShaderMaterial>(null);
@@ -96,12 +79,36 @@ const ConnectionsBatched = forwardRef<InstancedMesh, ConnectionsBatchedProps>(
       const endNodePos = nodePositions[connection.target];
 
       if (startNodePos && endNodePos) {
-        positions.set(startNodePos, lineCount * 6);
-        positions.set(endNodePos, lineCount * 6 + 3);
+        // Calculate direction vector from source to target node
+        const directionVector = new THREE.Vector3(
+          endNodePos[0] - startNodePos[0],
+          endNodePos[1] - startNodePos[1],
+          endNodePos[2] - startNodePos[2]
+        ).normalize();
+        
+        // Define node radius (matching sphere geometry radius in NodesInstanced.tsx)
+        const nodeRadius = 0.5;
+        
+        // Adjust connection endpoints to node boundaries instead of centers
+        const adjustedStartPos = [
+          startNodePos[0] + directionVector.x * nodeRadius,
+          startNodePos[1] + directionVector.y * nodeRadius,
+          startNodePos[2] + directionVector.z * nodeRadius
+        ];
+        
+        const adjustedEndPos = [
+          endNodePos[0] - directionVector.x * nodeRadius,
+          endNodePos[1] - directionVector.y * nodeRadius,
+          endNodePos[2] - directionVector.z * nodeRadius
+        ];
+        
+        // Use the adjusted positions for connections
+        positions.set(adjustedStartPos, lineCount * 6);
+        positions.set(adjustedEndPos, lineCount * 6 + 3);
 
-        // Access values from refs directly without creating dependencies
-        const isSelected = selectedNodeIdRef.current === connection.source || selectedNodeIdRef.current === connection.target;
-        const isHovered = hoveredNodeIdRef.current === connection.source || hoveredNodeIdRef.current === connection.target;
+        // Access values from props directly
+        const isSelected = selectedNodeId === connection.source || selectedNodeId === connection.target;
+        const isHovered = hoveredNodeId === connection.source || hoveredNodeId === connection.target;
         
         // Enhanced color logic
         let color;
@@ -120,7 +127,7 @@ const ConnectionsBatched = forwardRef<InstancedMesh, ConnectionsBatchedProps>(
       }
     }
     return { positions, colors, lineCount };
-  }, [connections, nodePositions]); // Remove selectedNodeId and hoveredNodeId from deps
+  }, [connections, nodePositions, selectedNodeId, hoveredNodeId]); // Add missing dependencies
 
   useEffect(() => {
     console.log("ConnectionsBatched initializing geometry with:", {
@@ -149,32 +156,35 @@ const ConnectionsBatched = forwardRef<InstancedMesh, ConnectionsBatchedProps>(
     }
   }, [positions, colors, lineCount]);
 
-  // Frame counter for throttling updates
-  const frameCount = useRef(0);
+  // Time tracking for synchronized updates
+  const lastUpdateTime = useRef(0);
+  const UPDATE_INTERVAL = 0.15; // 150ms in seconds - matching NodesInstanced
 
   useFrame((state) => {
-    // Increment frame counter
-    frameCount.current += 1;
+    const currentTime = state.clock.elapsedTime;
+    const timeSinceLastUpdate = currentTime - lastUpdateTime.current;
     
     // Skip if refs are not ready
-    if (!geometryRef.current) {
+    if (!geometryRef.current || !geometryRef.current.attributes.position || !geometryRef.current.attributes.color) {
       return;
     }
     
-    // Update shader time uniform - this is relatively inexpensive
+    // Update shader time uniform
     if (connectionMaterialRef.current) {
       connectionMaterialRef.current.uniforms.time.value = state.clock.elapsedTime;
     }
     
-    // Skip if attributes are not ready
-    if (!geometryRef.current.attributes.position || !geometryRef.current.attributes.color) {
-      return;
-    }
+    // Get synchronized positions from the synchronizer
+    const syncedPositions = positionSynchronizer.updatePositions(currentTime);
     
-    // Only update positions every 2 frames to reduce GPU load
-    const shouldUpdatePositions = frameCount.current % 2 === 0;
-    // Only update colors every 3 frames (except for selected/hovered items)
-    const shouldUpdateColors = frameCount.current % 3 === 0;
+    // CRITICAL SYNC FIX: Update positions and colors at synchronized intervals
+    const shouldUpdatePositions = timeSinceLastUpdate >= UPDATE_INTERVAL;
+    const shouldUpdateColors = timeSinceLastUpdate >= UPDATE_INTERVAL / 3; // Update colors more frequently
+    
+    // Track last update time for position updates
+    if (shouldUpdatePositions) {
+      lastUpdateTime.current = currentTime;
+    }
     
     try {
       const positionAttribute = geometryRef.current.attributes.position as THREE.BufferAttribute;
@@ -183,31 +193,51 @@ const ConnectionsBatched = forwardRef<InstancedMesh, ConnectionsBatchedProps>(
       let positionsUpdated = false;
       let colorsUpdated = false;
       
-      // Update each connection
+      // Use synchronized positions from the position synchronizer
       for (let i = 0; i < connections.length; i++) {
         const connection = connections[i];
         
-        // Use the nodePositions directly instead of trying to get from instancedMesh
-        const startPos = nodePositions[connection.source];
-        const endPos = nodePositions[connection.target];
+        // Get synchronized positions for both nodes
+        const startPos = syncedPositions[connection.source];
+        const endPos = syncedPositions[connection.target];
         
         if (!startPos || !endPos) {
-          // Safety check for missing node positions - log for debugging
-          console.warn(`ConnectionsBatched: Missing position for connection ${connection.source} -> ${connection.target}`);
-          continue; // Skip if positions aren't available
+          console.warn(`ConnectionsBatched: Missing synchronized position for connection ${connection.source} -> ${connection.target}`);
+          continue;
         }
         
-        // Update positions less frequently to save resources
+        // Calculate direction vector
+        const directionVector = new THREE.Vector3(
+          endPos[0] - startPos[0],
+          endPos[1] - startPos[1],
+          endPos[2] - startPos[2]
+        ).normalize();
+        
+        // Define node radius (matching NodesInstanced sphere radius)
+        const nodeRadius = 0.5;
+        
+        // Adjust connection endpoints to node boundaries
+        const adjustedStartPos = new THREE.Vector3(
+          startPos[0] + directionVector.x * nodeRadius,
+          startPos[1] + directionVector.y * nodeRadius,
+          startPos[2] + directionVector.z * nodeRadius
+        );
+        
+        const adjustedEndPos = new THREE.Vector3(
+          endPos[0] - directionVector.x * nodeRadius,
+          endPos[1] - directionVector.y * nodeRadius,
+          endPos[2] - directionVector.z * nodeRadius
+        );
+        
         if (shouldUpdatePositions) {
-          positionAttribute.setXYZ(i * 2, startPos[0], startPos[1], startPos[2]);
-          positionAttribute.setXYZ(i * 2 + 1, endPos[0], endPos[1], endPos[2]);
+          positionAttribute.setXYZ(i * 2, adjustedStartPos.x, adjustedStartPos.y, adjustedStartPos.z);
+          positionAttribute.setXYZ(i * 2 + 1, adjustedEndPos.x, adjustedEndPos.y, adjustedEndPos.z);
           positionsUpdated = true;
         }
         
-        // Check if this connection needs immediate color update (selected/hovered)
-        // Access values directly from refs - this won't create dependencies
-        const isSelected = selectedNodeIdRef.current === connection.source || selectedNodeIdRef.current === connection.target;
-        const isHovered = hoveredNodeIdRef.current === connection.source || hoveredNodeIdRef.current === connection.target;
+        // Check if this connection needs color update
+        const isSelected = selectedNodeId === connection.source || selectedNodeId === connection.target;
+        const isHovered = hoveredNodeId === connection.source || hoveredNodeId === connection.target;
         
         // Track if this is a high-priority connection that needs immediate updates
         const isHighPriorityConnection = isSelected || isHovered;
@@ -243,7 +273,7 @@ const ConnectionsBatched = forwardRef<InstancedMesh, ConnectionsBatchedProps>(
     }
   });
 
-  // Create the shader material
+  // Create the shader material with enhanced visibility
   useEffect(() => {
     if (geometryRef.current) {
       const material = new THREE.ShaderMaterial({
@@ -256,19 +286,38 @@ const ConnectionsBatched = forwardRef<InstancedMesh, ConnectionsBatchedProps>(
         transparent: true,
         side: DoubleSide,
         depthWrite: false,
+        // Ensure lines are always rendered on top
+        depthTest: true,
+        // Increase line brightness for better visibility
+        opacity: 1.0
       });
       
       if (lineSegmentsRef.current) {
         lineSegmentsRef.current.material = material;
         connectionMaterialRef.current = material;
+        // Ensure connections are visible regardless of frustum culling
+        lineSegmentsRef.current.frustumCulled = false;
+        // Set render order to ensure connections render after nodes
+        lineSegmentsRef.current.renderOrder = 10;
       }
     }
   }, []);
 
-  // Always ensure lineCount is correct
+  // Enhanced connection management to ensure proper rendering
   useEffect(() => {
     if (geometryRef.current && lineCount > 0) {
       geometryRef.current.setDrawRange(0, lineCount * 2);
+      
+      // Log connection counts to help with debugging
+      console.log(`Setting draw range for ${lineCount} connections (${lineCount * 2} vertices)`);
+      
+      // Force immediate update to ensure connections are visible
+      if (geometryRef.current.attributes.position) {
+        geometryRef.current.attributes.position.needsUpdate = true;
+      }
+      if (geometryRef.current.attributes.color) {
+        geometryRef.current.attributes.color.needsUpdate = true;
+      }
     }
   }, [lineCount]);
 
@@ -279,4 +328,4 @@ const ConnectionsBatched = forwardRef<InstancedMesh, ConnectionsBatchedProps>(
   );
 });
 
-export default ConnectionsBatched;
+export { ConnectionsBatched };

@@ -66,6 +66,12 @@ function AppContent() {
   // Performance monitoring
   const [performanceRecords, setPerformanceRecords] = useState<PerformanceRecord[]>([]);
   const performanceMonitorRef = useRef<number | null>(null);
+  const latestRecordsRef = useRef<PerformanceRecord[]>([]);
+  
+  // Keep the ref updated with the latest state value
+  useEffect(() => {
+    latestRecordsRef.current = performanceRecords;
+  }, [performanceRecords]);
   
   // Monitor performance metrics - with performance tracking throttle
   useEffect(() => {
@@ -75,7 +81,7 @@ function AppContent() {
       
       // Use a throttled update approach to prevent infinite loops
       let lastUpdateTime = 0;
-      const THROTTLE_MS = 2000; // Only update every 2 seconds
+      const THROTTLE_MS = 5000; // Increased to 5 seconds to reduce overhead
       
       const monitorPerformance = () => {
         const now = performance.now();
@@ -84,8 +90,9 @@ function AppContent() {
         if (now - lastUpdateTime > THROTTLE_MS) {
           lastUpdateTime = now;
           
-          // Calculate FPS based on frame timing
-          const fps = 1000 / (now - (performanceRecords[performanceRecords.length - 1]?.timestamp || now - 1000));
+          // Calculate FPS based on frame timing using the ref instead of state
+          const records = latestRecordsRef.current;
+          const fps = 1000 / (now - (records[records.length - 1]?.timestamp || now - 1000));
           
           // Get memory info if available
           let memoryInfo = undefined;
@@ -128,7 +135,7 @@ function AppContent() {
         performanceMonitorRef.current = null;
       }
     };
-  }, [performanceRecords]); // Added performanceRecords as dependency since we're using functional updates
+  }, []); // No need for performanceRecords dependency now that we use the ref
   
   // Track view mode changes using ViewManager
   useEffect(() => {

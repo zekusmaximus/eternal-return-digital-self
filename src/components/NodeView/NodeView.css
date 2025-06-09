@@ -189,14 +189,30 @@
     position: fixed;
     bottom: var(--spacing-lg);
     right: var(--spacing-lg);
-    width: 140px;
-    height: 140px;
+    width: 210px;
+    height: 210px;
     background-color: rgba(0, 0, 0, 0.5);
     border: 1px solid var(--border-color);
     border-radius: 50%;
-    z-index: 100;
+    z-index: 1000;
     overflow: hidden;
     box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+    pointer-events: all;
+    transition: box-shadow 0.3s ease;
+  }
+  
+  /* Add hover effect to the fixed minimap */
+  .mini-constellation:hover {
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.4);
+  }
+  
+  /* Container for the Three.js mini constellation canvas */
+  .mini-constellation-container {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    position: relative;
+    border-radius: 50%;
   }
   
   /* Loading state */
@@ -301,8 +317,10 @@
     }
     
     .mini-constellation {
-      width: 120px;
-      height: 120px;
+      width: 180px;
+      height: 180px;
+      bottom: calc(var(--spacing-lg) - 5px);
+      right: calc(var(--spacing-lg) - 5px);
     }
     
     .marginalia-sidebar {
@@ -330,10 +348,15 @@
     }
     
     .mini-constellation {
-      width: 100px;
-      height: 100px;
+      width: 150px;
+      height: 150px;
       bottom: var(--spacing-md);
       right: var(--spacing-md);
+    }
+    
+    .mini-constellation-container {
+      width: 100%;
+      height: 100%;
     }
   }
   

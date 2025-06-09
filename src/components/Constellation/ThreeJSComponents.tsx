@@ -1,12 +1,11 @@
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Stars } from '@react-three/drei';
 import { NodesInstanced } from './NodesInstanced';
-import ConnectionsBatched from './ConnectionsBatched';
+import { ConnectionsBatched } from './ConnectionsBatched';
 import { InstancedMesh, Color } from 'three';
 import * as THREE from 'three';
-import { EffectComposer, Bloom } from '@react-three/postprocessing';
-import { useFrame, useThree } from '@react-three/fiber';
-import { useCallback, useState, useEffect, useMemo, MutableRefObject, useRef } from 'react';
+import { useThree } from '@react-three/fiber';
+import { useState, useEffect, useMemo, MutableRefObject, useRef } from 'react';
 
 // Import node types from store or create interface
 import { ConstellationNode, Connection, NodePositions } from '../../types';
@@ -28,6 +27,10 @@ interface ThreeJSComponentsProps {
   onWebGLContextCreated?: (renderer: THREE.WebGLRenderer) => void; // Callback when WebGL renderer is created
   onWebGLError?: (error: Error) => void; // Callback for WebGL errors
   isInitialChoicePhase: boolean;
+  positionSynchronizer: {
+    updatePositions: (time: number, isMinimap?: boolean) => { [key: string]: [number, number, number] };
+    getCurrentPositions: () => { [key: string]: [number, number, number] };
+  };
 }
 
 // WebGL error handler component
@@ -78,77 +81,32 @@ const WebGLErrorHandler = () => {
   return null;
 };
 
-// Resource optimizer component
+// Simplified resource optimizer component - reduced logging and overhead
 const ResourceOptimizer = () => {
   const { gl } = useThree();
-  // Use ref to store a unique ID for this renderer instance
-  const rendererIdRef = useRef(`optimizer-${Date.now()}`);
+  // Removed unused ref
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
   
   useEffect(() => {
-    // Track instance for debugging
-    const rendererId = rendererIdRef.current;
-    console.log("[ThreeJS ResourceOptimizer] Initializing for renderer:", rendererId);
-    
     // Set WebGL parameters for better stability
-    gl.getContext().getExtension('WEBGL_lose_context');
+    try {
+      gl.getContext().getExtension('WEBGL_lose_context');
+    } catch (err) {
+      console.warn("[ThreeJS] Could not get WebGL extension:", err);
+    }
     
-    // Lower precision to reduce memory usage
-    const glContext = gl.getContext();
-    const maxPrecision = glContext.getShaderPrecisionFormat(
-      glContext.FRAGMENT_SHADER,
-      glContext.MEDIUM_FLOAT
-    );
-    console.log("[ThreeJS] Using WebGL precision:", maxPrecision);
+    // Clear any existing interval to prevent duplicates
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
     
-    // Track memory metrics over time to identify leaks
-    const memoryHistory: Array<{time: number, textures: number, geometries: number}> = [];
-    
-    // Garbage collection hint (helps prevent memory leaks)
-    const intervalId = setInterval(() => {
-      if (gl && gl.info) {
-        const currentMemory = {
-          time: Date.now(),
-          textures: gl.info.memory.textures,
-          geometries: gl.info.memory.geometries
-        };
-        
-        memoryHistory.push(currentMemory);
-        // Keep last 10 records
-        if (memoryHistory.length > 10) memoryHistory.shift();
-        
-        // Check for concerning memory growth
-        if (memoryHistory.length > 5) {
-          const oldestRecord = memoryHistory[0];
-          const textureGrowth = currentMemory.textures - oldestRecord.textures;
-          const geometryGrowth = currentMemory.geometries - oldestRecord.geometries;
-          
-          if (textureGrowth > 10 || geometryGrowth > 10) {
-            console.warn("[ThreeJS] Possible memory leak detected:", {
-              textureGrowth,
-              geometryGrowth,
-              elapsed: (currentMemory.time - oldestRecord.time) / 1000 + "s"
-            });
-          }
-        }
-        
-        console.log("[ThreeJS] Memory usage:", gl.info.memory);
-        console.log("[ThreeJS] Render calls:", gl.info.render);
-        console.log("[ThreeJS] Active textures:", gl.info.memory.textures);
-        console.log("[ThreeJS] Active geometries:", gl.info.memory.geometries);
-      }
-    }, 5000); // Log every 5 seconds
-    
-    // Implement proper cleanup when component unmounts
+    // Return cleanup function without creating new interval -
+    // removed continuous memory monitoring to reduce overhead
     return () => {
-      console.log("[ThreeJS] Cleaning up resources for renderer:", rendererId);
-      clearInterval(intervalId);
-      
-      try {
-        // Dispose of renderer resources
-        gl.dispose();
-        console.log("[ThreeJS] Disposed renderer resources");
-      } catch (err) {
-        console.error("[ThreeJS] Error during resource cleanup:", err);
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
     };
   }, [gl]);
@@ -165,63 +123,46 @@ const ThreeJSComponents: React.FC<ThreeJSComponentsProps> = ({
   onWebGLContextCreated,
   onWebGLError,
   isInitialChoicePhase,
+  positionSynchronizer,
 }) => {
-  return (
+  // Memoize Canvas component to prevent unnecessary recreation
+  return useMemo(() => (
     <Canvas
-      camera={{ position: [0, 0, 40], fov: 35 }} // Increased FOV for wider view
+      camera={{ 
+        position: [0, 0, 70], // Move camera further back to push constellation away
+        fov: 45, // CRITICAL FIX: Wider field of view to see more nodes
+        near: 1, // CRITICAL FIX: Closer near plane
+        far: 200 // CRITICAL FIX: Further far plane
+      }}
       gl={{
-        powerPreference: "default", // Changed from high-performance to default for better stability
-        antialias: false, // Disable antialiasing to improve performance
-        precision: "mediump", // Use medium precision to save resources
-        logarithmicDepthBuffer: false, // Disable for better performance
-        stencil: false, // Disable stencil buffer when not needed
-        alpha: true, // Enable alpha for better compositing
-        preserveDrawingBuffer: true // Help with context recovery
+        powerPreference: "default",
+        antialias: false,
+        precision: "lowp", // Use low precision to save resources and improve stability
+        logarithmicDepthBuffer: false,
+        stencil: false,
+        alpha: true,
+        preserveDrawingBuffer: true,
+        failIfMajorPerformanceCaveat: false // Don't fail on low-end hardware
       }}
       onCreated={({ gl }) => {
-        // Generate unique ID for this renderer instance
-        const rendererId = `three-renderer-${Date.now()}`;
+        // Simplified logging
+        console.log("[ThreeJS] WebGL context created");
         
-        // Log detailed WebGL information
-        console.log("[ThreeJS] WebGL context created", {
-          rendererId,
-          memory: gl.info.memory,
-          programs: gl.info.programs?.length || 'unknown'
-        });
+        // Explicitly discard depth and stencil buffers to save memory
+        const context = gl.getContext();
+        if (context) {
+          context.pixelStorei(context.UNPACK_COLORSPACE_CONVERSION_WEBGL, context.NONE);
+        }
 
         // Notify parent component about WebGL context creation
         if (onWebGLContextCreated) {
           onWebGLContextCreated(gl);
         }
         
-        // Try to get more detailed GPU info
-        try {
-          const canvas = gl.domElement;
-          const glContext = canvas.getContext('webgl');
-          if (glContext) {
-            const debugInfo = glContext.getExtension('WEBGL_debug_renderer_info');
-            if (debugInfo) {
-              const vendor = glContext.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL);
-              const renderer = glContext.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
-              console.log("[ThreeJS] GPU details:", { vendor, renderer, rendererId });
-            }
-          }
-        } catch (err) {
-          console.warn("[ThreeJS] Could not get detailed GPU info:", err);
-        }
-        
-        // Check current view mode to track transitions
-        console.log("[ThreeJS] Checking active components when WebGL initialized");
-        
-        // Add context loss handling
+        // Add context loss handling with simplified error reporting
         const canvas = gl.domElement;
         canvas.addEventListener('webglcontextlost', (event) => {
-          console.error("[ThreeJS] WebGL context lost event triggered", event);
-          console.error("[ThreeJS] Last memory state:", gl.info.memory);
-          console.error("[ThreeJS] Renderer instance:", rendererId);
-          
-          // Log stack trace to identify source of context loss
-          console.error("[ThreeJS] Context loss stack trace:", new Error().stack);
+          console.error("[ThreeJS] WebGL context lost event triggered");
           
           event.preventDefault();
           if (onWebGLError) {
@@ -229,14 +170,13 @@ const ThreeJSComponents: React.FC<ThreeJSComponentsProps> = ({
           }
         });
         
-        // Auto-recovery disabled to avoid interference with NodeView
-        canvas.addEventListener('webglcontextrestored', (event) => {
-          console.log("[ThreeJS] WebGL context restored", event);
+        canvas.addEventListener('webglcontextrestored', () => {
+          console.log("[ThreeJS] WebGL context restored");
         });
       }}
-      performance={{ min: 0.5 }} // Allow frame rate to drop to improve stability
-      frameloop="demand" // Changed from "always" to demand to reduce GPU load when not animating
-      dpr={[0.8, 1.5]} // Automatically adjust resolution based on device performance
+      performance={{ min: 0.5 }}
+      frameloop="demand"
+      dpr={[0.5, 1.0]} // Lower resolution range for better stability
     >
       {/* Enhanced lighting setup for better visual effects */}
       <color attach="background" args={[0x020209]} />
@@ -275,11 +215,13 @@ const ThreeJSComponents: React.FC<ThreeJSComponentsProps> = ({
         nodePositions={nodePositions}
         connections={convertConnections(connections)}
         isInitialChoicePhase={isInitialChoicePhase}
+        positionSynchronizer={positionSynchronizer}
       />
       <ConnectionsBatched
         // No longer passing ref here since ConnectionsBatched doesn't use it
         connections={mappedConnections}
         nodePositions={nodePositions}
+        positionSynchronizer={positionSynchronizer}
       />
       
       {/* Add WebGL error handler */}
@@ -288,53 +230,31 @@ const ThreeJSComponents: React.FC<ThreeJSComponentsProps> = ({
       {/* Add resource optimizer */}
       <ResourceOptimizer />
       
-      {/* Post-processing effects - more conditionally rendered based on performance */}
-      <OptimizedEffects onlyForHighEnd={true} />
+      {/* Post-processing effects - disabled for stability */}
+      <OptimizedEffects />
       
       {/* Camera controls */}
       <OrbitControls
         enableDamping
         dampingFactor={0.05}
         rotateSpeed={0.5}
-        minDistance={12} // Reduced min distance to allow closer view
-        maxDistance={80} // Increased max distance for wider view
+        minDistance={50} // Increase minimum zoom distance for further back constellation
+        maxDistance={120} // Increase maximum zoom distance for further back constellation
+        enableZoom={true}
+        zoomSpeed={0.5} // Slower zoom for better control
+        enablePan={true}
+        panSpeed={0.5} // Slower pan for better control
+        maxPolarAngle={Math.PI} // Allow full vertical rotation
+        minPolarAngle={0} // Allow full vertical rotation
       />
     </Canvas>
-  );
+  ), [nodes, nodePositions, connections, mappedConnections, instancedMeshRef, isInitialChoicePhase, onWebGLContextCreated, onWebGLError, positionSynchronizer]);
 };
 
-// Performance-optimized stars component that adapts based on device capabilities
+// Simplified stars component with fixed parameters to reduce render overhead
 const AdaptiveStars = () => {
-  // Reference to track current frame rate
-  const frameRateRef = useRef<{ value: number; samples: number[] }>({ value: 60, samples: [] });
-  
-  // Dynamically adjust star count based on performance
-  const updateFrameRate = useCallback((fps: number) => {
-    frameRateRef.current.samples.push(fps);
-    
-    // Keep only the last 10 samples
-    if (frameRateRef.current.samples.length > 10) {
-      frameRateRef.current.samples.shift();
-    }
-    
-    // Calculate average frame rate
-    const sum = frameRateRef.current.samples.reduce((a, b) => a + b, 0);
-    frameRateRef.current.value = sum / frameRateRef.current.samples.length;
-  }, []);
-  
-  // Monitor frame rate
-  useFrame((state) => {
-    updateFrameRate(state.clock.getDelta() * 1000);
-  });
-  
-  // Dynamic stars based on performance
-  const starCount = useMemo(() => {
-    const fps = frameRateRef.current.value;
-    // Reduce star count when frame rate drops
-    if (fps < 30) return 1000;
-    if (fps < 45) return 1500;
-    return 2000;
-  }, []); // No dependencies needed as we're using ref value that's updated outside of React's lifecycle
+  // Fixed star count - prevents continuous re-rendering
+  const starCount = 1000;
   
   return (
     <Stars
@@ -344,76 +264,17 @@ const AdaptiveStars = () => {
       factor={3}
       saturation={0.2}
       fade
-      speed={0.3}
+      speed={0.1} // Reduced animation speed
     />
   );
 };
 
 // Custom useRef implementation removed to avoid conflict with React's useRef
 
-// Conditionally rendered post-processing effects based on device performance
-const OptimizedEffects = ({ onlyForHighEnd = false }) => {
-  // Use high-quality effects only on powerful devices
-  const [useHighQuality, setUseHighQuality] = useState(false);
-  
-  // Check device capabilities on mount - with more thorough performance checking
-  useEffect(() => {
-    const checkPerformance = async () => {
-      try {
-        // Simple detection based on GPU info from WebGL context
-        const canvas = document.createElement('canvas');
-        const gl = canvas.getContext('webgl');
-        
-        if (!gl) {
-          console.warn("[ThreeJS] WebGL not supported");
-          setUseHighQuality(false);
-          return;
-        }
-        
-        // Check for high-end GPU indicators
-        const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-        const renderer = debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : '';
-        console.log("[ThreeJS] GPU renderer:", renderer);
-        
-        // More conservative quality detection to prevent context loss
-        // Only enable high quality for definitely high-end GPUs
-        const isHighEnd = /(nvidia|geforce|radeon rx|amd radeon pro)/i.test(renderer) &&
-                        !/(mobile|intel)/i.test(renderer);
-                        
-        // If onlyForHighEnd is true, disable effects for all but the highest end systems
-        if (onlyForHighEnd && !isHighEnd) {
-          setUseHighQuality(false);
-          return;
-        }
-        
-        setUseHighQuality(isHighEnd);
-        
-        // Clean up
-        canvas.remove();
-      } catch (err) {
-        console.error("[ThreeJS] Error checking GPU performance:", err);
-        setUseHighQuality(false);
-      }
-    };
-    
-    checkPerformance();
-  }, [onlyForHighEnd]);
-  
-  return (
-    // Only render effects if high quality is enabled
-    // This can dramatically reduce GPU load on lower-end devices
-    useHighQuality ? (
-      <EffectComposer multisampling={0}>
-        <Bloom
-          intensity={0.4} // Reduced from 0.6
-          luminanceThreshold={0.4} // Increased from 0.3
-          luminanceSmoothing={0.7}
-          radius={0.3} // Fixed lower value
-          mipmapBlur={false} // Disabled regardless of high quality
-        />
-      </EffectComposer>
-    ) : null
-  );
+// Simplified post-processing effects - completely disabled for stability
+const OptimizedEffects = () => {
+  // Simply return null to disable all post-processing effects
+  return null;
 };
 
 export default ThreeJSComponents;

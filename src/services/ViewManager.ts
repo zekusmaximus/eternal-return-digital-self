@@ -92,6 +92,10 @@ class ViewManager {
     
     const previousView = this.state.activeView;
     
+    // Only generate a new key if transitioning between different views
+    // This prevents unnecessary remounting when the same view is re-activated
+    const needsNewKey = previousView !== viewType;
+    
     // Set transitioning state
     this.state = {
       ...this.state,
@@ -100,8 +104,10 @@ class ViewManager {
       isTransitioning: true,
       transitionStartTime: Date.now(),
       transitionCount: this.state.transitionCount + 1,
-      // Generate a new unique key to force complete remount
-      uniqueViewKey: `view-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`
+      // Only generate a new key when actually changing views
+      uniqueViewKey: needsNewKey
+        ? `view-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`
+        : this.state.uniqueViewKey
     };
     
     // Call before transition callback
@@ -139,7 +145,28 @@ class ViewManager {
   /**
    * Register view component mount status
    */
+  // Track last mount time to prevent rapid mount/unmount cycles
+  private lastMountTimes = new Map<ViewType, number>();
+  private mountThrottleMs = 500; // Minimum time between mount/unmount (500ms)
+  
   public registerViewMount(viewType: ViewType, isMounted: boolean): void {
+    const currentTime = Date.now();
+    const lastMountTime = this.lastMountTimes.get(viewType) || 0;
+    const timeSinceLastMount = currentTime - lastMountTime;
+    
+    // If this is an unmount operation that happens too quickly after a mount,
+    // ignore it to prevent rapid mount/unmount cycles
+    if (!isMounted && timeSinceLastMount < this.mountThrottleMs) {
+      console.log(`[ViewManager] Ignoring rapid unmount of ${viewType} (${timeSinceLastMount}ms after mount)`);
+      return;
+    }
+    
+    // Update last mount time for mounts
+    if (isMounted) {
+      this.lastMountTimes.set(viewType, currentTime);
+    }
+    
+    // Update view component state
     this.viewComponents.set(viewType, isMounted);
     console.log(`[ViewManager] View ${viewType} ${isMounted ? 'mounted' : 'unmounted'}`);
     
@@ -155,8 +182,8 @@ class ViewManager {
     });
     
     // Log a warning if multiple main views are mounted simultaneously
-    if (mountedViews > 1 && 
-        mountedViewNames.includes('constellation') && 
+    if (mountedViews > 1 &&
+        mountedViewNames.includes('constellation') &&
         mountedViewNames.includes('reading')) {
       console.warn('[ViewManager] Multiple main views mounted simultaneously:', mountedViewNames.join(', '));
     }

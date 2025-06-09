@@ -39,14 +39,23 @@ class WebGLContextManager {
   private activeContextId: string | null = null;
   private contextCounter = 0;
   private contextLossEvents = 0;
-  private maxAllowedContexts = 2; // Limit concurrent WebGL contexts
-  private diagnosticsEnabled = true;
+  private maxAllowedContexts = 1; // Stricter limit - only allow ONE active WebGL context at a time
+  private diagnosticsEnabled = false; // Disable diagnostics by default to reduce overhead
   private memoryCheckInterval: NodeJS.Timeout | null = null;
+  private isInitialized = false; // Track initialization state
 
   // Singleton pattern
   private constructor() {
-    this.startMemoryMonitoring();
-    console.log('[WebGLContextManager] Initialized');
+    if (!this.isInitialized) {
+      this.startMemoryMonitoring();
+      console.log('[WebGLContextManager] Initialized');
+      this.isInitialized = true;
+      
+      // Add a cleanup handler for page unload to ensure proper context disposal
+      window.addEventListener('beforeunload', () => {
+        this.disposeAllContexts();
+      });
+    }
   }
 
   public static getInstance(): WebGLContextManager {
@@ -66,9 +75,30 @@ class WebGLContextManager {
     suspendFn: () => void = () => {},
     resumeFn: () => void = () => {}
   ): string {
+    // Check if there's already a context of this type
+    let existingContextId: string | null = null;
+    
+    // Look for an existing context of the same type
+    for (const [id, context] of this.contexts.entries()) {
+      if (context.type === type) {
+        existingContextId = id;
+        break;
+      }
+    }
+    
+    // If we found an existing context of the same type, dispose it first
+    if (existingContextId) {
+      console.log(`[WebGLContextManager] Found existing ${type} context, disposing it first`);
+      this.disposeContext(existingContextId);
+    }
+    
     const contextId = `webgl-context-${++this.contextCounter}-${type}-${Date.now()}`;
     
     console.log(`[WebGLContextManager] Registering new ${type} WebGL context: ${contextId}`);
+    
+    // Configure renderer for better stability
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.shadowMap.enabled = false; // Disable shadows for better performance
     
     // Store context information
     this.contexts.set(contextId, {
@@ -92,15 +122,25 @@ class WebGLContextManager {
     // Update memory usage for the new context
     this.updateContextMemoryUsage(contextId);
     
-    // Add context loss detection
+    // Add context loss detection with improved error handling
     const canvas = renderer.domElement;
-    canvas.addEventListener('webglcontextlost', (event) => {
-      this.handleContextLoss(contextId, event);
-    });
     
-    canvas.addEventListener('webglcontextrestored', () => {
+    const handleContextLost = (event: Event) => {
+      event.preventDefault(); // Prevent default behavior first
+      this.handleContextLoss(contextId, event);
+    };
+    
+    const handleContextRestored = () => {
       this.handleContextRestoration(contextId);
-    });
+    };
+    
+    // Remove any existing listeners first
+    canvas.removeEventListener('webglcontextlost', handleContextLost);
+    canvas.removeEventListener('webglcontextrestored', handleContextRestored);
+    
+    // Add new listeners
+    canvas.addEventListener('webglcontextlost', handleContextLost);
+    canvas.addEventListener('webglcontextrestored', handleContextRestored);
     
     return contextId;
   }
@@ -326,10 +366,10 @@ class WebGLContextManager {
         }
       }
       
-      if (totalMemory.contexts > 0) {
+      if (totalMemory.contexts > 0 && this.diagnosticsEnabled) {
         console.log('[WebGLContextManager] Memory usage:', totalMemory);
       }
-    }, 10000); // Check every 10 seconds
+    }, 30000); // Reduced frequency - check every 30 seconds
   }
 
   /**

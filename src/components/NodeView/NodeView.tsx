@@ -1,6 +1,6 @@
 // src/components/NodeView/NodeView.tsx
 
-import { useEffect, useState, lazy, Suspense, useRef, useMemo, CSSProperties } from 'react';
+import { useEffect, useState, lazy, Suspense, useRef, useMemo } from 'react';
 import ErrorBoundary from '../common/ErrorBoundary';
 import SimpleTextRenderer from './SimpleTextRenderer';
 import { viewManager } from '../../services/ViewManager';
@@ -85,10 +85,7 @@ const NodeView = () => {
   // Get unique view key from ViewManager to force proper unmount/remount
   const uniqueViewKey = useMemo(() => viewManager.getUniqueViewKey(), []);
 
-  // State for MiniConstellation dragging
-  const [isDragging, setIsDragging] = useState(false);
-  const [position, setPosition] = useState({ top: 100, left: 100 }); // Initial position
-  const [initialMousePos, setInitialMousePos] = useState({ x: 0, y: 0 });
+  // Reference for MiniConstellation
   const miniConstellationRef = useRef<HTMLDivElement>(null);
 
   // State to control transition between ReactMarkdown and NarramorphRenderer
@@ -385,49 +382,7 @@ const NodeView = () => {
     dispatch(returnToConstellation());
   };
 
-  // Event handlers for MiniConstellation dragging
-  const handlePointerDown = (event: React.PointerEvent) => {
-    if (miniConstellationRef.current && miniConstellationRef.current.contains(event.target as Node)) {
-      setIsDragging(true);
-      setInitialMousePos({
-        x: event.clientX - position.left,
-        y: event.clientY - position.top,
-      });
-      (event.target as HTMLElement).setPointerCapture(event.pointerId); // Capture pointer
-    }
-  };
-
-  const handlePointerMove = (event: React.PointerEvent) => {
-    if (isDragging) {
-      setPosition({
-        top: event.clientY - initialMousePos.y,
-        left: event.clientX - initialMousePos.x,
-      });
-    }
-  };
-
-  const handlePointerUp = (event: React.PointerEvent) => {
-    if (isDragging) {
-      setIsDragging(false);
-      (event.target as HTMLElement).releasePointerCapture(event.pointerId); // Release pointer
-    }
-  };
-
-  // Attach and detach document-level event listeners for move and up events
-  useEffect(() => {
-    if (isDragging) {
-      document.addEventListener('pointermove', handlePointerMove as any);
-      document.addEventListener('pointerup', handlePointerUp as any);
-    } else {
-      document.removeEventListener('pointermove', handlePointerMove as any);
-      document.removeEventListener('pointerup', handlePointerUp as any);
-    }
-
-    return () => {
-      document.removeEventListener('pointermove', handlePointerMove as any);
-      document.removeEventListener('pointerup', handlePointerUp as any);
-    };
-  }, [isDragging, initialMousePos.x, initialMousePos.y]); // Added dependencies to re-attach if initialMousePos changes while dragging (edge case)
+  // Removed MiniConstellation dragging handlers
 
   if (viewMode !== 'reading' || !node) {
     return null;
@@ -554,13 +509,21 @@ const NodeView = () => {
                     nodeId={node.id}
                     onVisibilityChange={(isVisible: boolean) => {
                       console.log(`[NodeView] Content visibility changed to: ${isVisible ? 'visible' : 'hidden'}`);
-                      setContentDebug(prev => ({ ...prev, visibilityIssue: !isVisible }));
                       
-                      // Force fallback if content becomes invisible unexpectedly
-                      if (!isVisible && contentDebug.narramorphActivated) {
-                        console.warn('[NodeView] Content disappeared - switching to simple renderer');
-                        setForceSimpleRenderer(true);
-                      }
+                      // Use a ref to track visibility changes over time
+                      const visibilityTimer = setTimeout(() => {
+                        // Only update state if component is still mounted
+                        if (contentContainerRef.current) {
+                          setContentDebug(prev => ({ ...prev, visibilityIssue: !isVisible }));
+                          
+                          // Only force simple renderer if content remains invisible
+                          if (!isVisible) {
+                            setForceSimpleRenderer(true);
+                          }
+                        }
+                      }, 1000); // Wait 1 second before applying changes
+                      
+                      return () => clearTimeout(visibilityTimer);
                     }}
                   />
                 </div>
@@ -638,19 +601,10 @@ const NodeView = () => {
         </button>
       </div>
       
-      {/* Mini constellation for context */}
+      {/* Mini constellation for context - fixed in bottom right corner */}
       <div
         ref={miniConstellationRef}
         className="mini-constellation"
-        style={{
-          position: 'absolute',
-          top: `${position.top}px`,
-          left: `${position.left}px`,
-          cursor: isDragging ? 'grabbing' : 'grab',
-          zIndex: 1000, // Ensure it's above other elements
-        }}
-        onPointerDown={handlePointerDown}
-        // Removed onPointerMove and onPointerUp from here as they are handled by the document
       >
         <Suspense fallback={<SideComponentLoading />}>
           <MiniConstellation
