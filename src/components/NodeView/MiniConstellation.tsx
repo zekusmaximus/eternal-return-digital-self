@@ -1,9 +1,9 @@
-import React, { useMemo, useRef, useState, useEffect } from 'react';
+import { useMemo, useRef, useState, useEffect, forwardRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { selectConstellationNodes, selectConnections } from '../../store/slices/nodesSlice';
 import { nodeSelected } from '../../store/slices/interfaceSlice';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Bounds } from '@react-three/drei';
+import { OrbitControls } from '@react-three/drei';
 import { NodesInstanced } from '../Constellation/NodesInstanced';
 import { ConnectionsBatched } from '../Constellation/ConnectionsBatched';
 import { InstancedMesh } from 'three';
@@ -13,12 +13,11 @@ interface MiniConstellationProps {
 }
 
 // Unique ID for this component instance to prevent context collisions
-const MiniConstellation: React.FC<MiniConstellationProps> = ({ currentNodeId }) => {
+const MiniConstellation = forwardRef<HTMLDivElement, MiniConstellationProps>(({ currentNodeId }, ref) => {
   const dispatch = useDispatch();
   const nodes = useSelector(selectConstellationNodes);
   const connections = useSelector(selectConnections);
   const instancedMeshRef = useRef<InstancedMesh>(null!);
-  const containerRef = useRef<HTMLDivElement>(null);
   const [isInteracting, setIsInteracting] = useState(false);
   const canvasId = useMemo(() => `mini-constellation-canvas-${Date.now()}`, []);
 
@@ -60,22 +59,27 @@ const MiniConstellation: React.FC<MiniConstellationProps> = ({ currentNodeId }) 
 
   const nodePositions = useMemo(() => {
     const positions: { [key: string]: [number, number, number] } = {};
+    
+    // Use the same Fibonacci sphere algorithm as the main constellation
     nodes.forEach((node, index) => {
       const numNodes = nodes.length;
-      // Optimized radius for the container size
-      const radius = 4.5;
+      // Use smaller radius for minimap
+      const radius = 3.0;
       
-      // Using a circular arrangement for better visibility in small space
-      const angle = (index / numNodes) * Math.PI * 2;
+      // Fibonacci sphere algorithm (same as ConstellationView)
+      const offset = 2.0 / numNodes;
+      const increment = Math.PI * (3.0 - Math.sqrt(5.0));
       
-      // Calculate position in a mostly flat circle
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
-      // Minimal vertical variation to keep nodes visible
-      const y = Math.sin(angle * 2) * (radius * 0.1); // Very slight vertical variation
+      const y = ((index * offset) - 1) + (offset / 2);
+      const r = Math.sqrt(1 - y * y);
+      const phi = index * increment;
       
-      positions[node.id] = [x, y, z];
+      const x = Math.cos(phi) * r * radius;
+      const z = Math.sin(phi) * r * radius;
+      
+      positions[node.id] = [x, y * radius, z];
     });
+    
     return positions;
   }, [nodes]);
 
@@ -94,23 +98,22 @@ const MiniConstellation: React.FC<MiniConstellationProps> = ({ currentNodeId }) 
 
   return (
     <div
-      ref={containerRef}
+      ref={ref}
       className="mini-constellation-container"
       style={{
-        width: '160px',  // Slightly larger for better visibility
-        height: '160px', // Slightly larger for better visibility
-        overflow: 'hidden',
-        position: 'absolute',
-        bottom: '20px',
-        right: '20px',
-        borderRadius: '50%',
+        width: '100%',
+        height: '100%',
+        borderRadius: '8px',
         cursor: isInteracting ? 'grabbing' : 'grab',
-        transition: 'transform 0.3s ease',
         boxShadow: '0 0 10px rgba(0,0,0,0.3)',
-        backgroundColor: 'rgba(0,0,0,0.3)',
-        border: '2px solid rgba(255,255,255,0.2)',
-        zIndex: 1000, // Ensure it's above other elements
-        pointerEvents: 'auto' // Ensure pointer events work
+        backgroundColor: 'rgba(0,0,0,0.1)',
+        border: '1px solid rgba(255,255,255,0.2)',
+        zIndex: 1000,
+        pointerEvents: 'auto',
+        padding: 0,
+        margin: 0,
+        overflow: 'hidden',
+        position: 'relative'
       }}
       // Add separate onMouseEnter/onMouseLeave for hover effects
       onMouseEnter={(e) => {
@@ -123,19 +126,24 @@ const MiniConstellation: React.FC<MiniConstellationProps> = ({ currentNodeId }) 
     >
       <Canvas
         id={canvasId}
-        frameloop="always"  // Always render for smooth interaction
+        frameloop="always"
+        style={{ 
+          width: '100%', 
+          height: '100%',
+          cursor: 'grab',
+          touchAction: 'none'
+        }}
         camera={{
-          position: [0, 0, 12], // Pull camera back further for complete view
-          fov: 45,              // Balanced field of view
+          position: [0, 0, 8],
+          fov: 35,
           near: 0.1,
-          far: 100,
-          zoom: 1.0             // Reset zoom to default
+          far: 100
         }}
         gl={{
           antialias: true,
           alpha: true,
-          powerPreference: 'default',  // Switched to default for better compatibility
-          preserveDrawingBuffer: true  // Needed for stable WebGL context
+          powerPreference: 'default',
+          preserveDrawingBuffer: true
         }}
         dpr={[1, 2]} // Limit pixel ratio to prevent performance issues
         performance={{ min: 0.5 }} // Allow reducing quality for better performance
@@ -143,7 +151,20 @@ const MiniConstellation: React.FC<MiniConstellationProps> = ({ currentNodeId }) 
         <ambientLight intensity={0.8} />
         <pointLight position={[10, 10, 10]} intensity={1.0} />
         <pointLight position={[-10, -10, 10]} intensity={0.5} />
-        <Bounds fit clip observe scale={0.7}> {/* Even smaller scale to ensure all nodes are visible */}
+        <OrbitControls
+          enableZoom={false}
+          enablePan={false}
+          rotateSpeed={1.5}
+          enableDamping={true}
+          dampingFactor={0.1}
+          minPolarAngle={0}
+          maxPolarAngle={Math.PI}
+          onStart={() => setIsInteracting(true)}
+          onEnd={() => setIsInteracting(false)}
+          target={[0, 0, 0]}
+        />
+        
+        <group scale={[0.6, 0.6, 0.6]}>
           <NodesInstanced
             ref={instancedMeshRef}
             nodes={nodes}
@@ -162,40 +183,10 @@ const MiniConstellation: React.FC<MiniConstellationProps> = ({ currentNodeId }) 
             nodePositions={nodePositions}
             positionSynchronizer={positionSynchronizer}
           />
-        </Bounds>
-        
-        {/* Simple optimized rotation controls */}
-        <group>
-          <OrbitControls
-            enableZoom={false}
-            enablePan={false}
-            rotateSpeed={0.8}             // Moderate speed for good control
-            enableDamping={true}
-            dampingFactor={0.3}           // Less damping for more responsive feel
-            
-            // Allow reasonable vertical rotation
-            minPolarAngle={Math.PI / 4}   // 45 degrees from top
-            maxPolarAngle={Math.PI * 3/4} // 45 degrees from bottom
-            
-            // Allow full rotation around Y axis
-            minAzimuthAngle={-Infinity}
-            maxAzimuthAngle={Infinity}
-            
-            // Disable auto-rotation to allow manual control
-            autoRotate={false}
-            
-            // Update interaction state for cursor feedback
-            onStart={() => setIsInteracting(true)}
-            onEnd={() => setIsInteracting(false)}
-            
-            // Make sure target is centered
-            target={[0, 0, 0]}
-            makeDefault
-          />
         </group>
       </Canvas>
     </div>
   );
-};
+});
 
 export default MiniConstellation;

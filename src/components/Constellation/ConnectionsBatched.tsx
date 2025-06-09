@@ -15,9 +15,8 @@ interface ConnectionsBatchedProps {
   };
 }
 
-// Connection line shader code for glowing effects
+// Connection line shader code for thick white lines with pulsing colors for available
 const connectionVertexShader = `
-  // Using the built-in 'color' attribute instead of redefining it
   uniform float time;
   varying vec3 vColor;
   varying float vPosition;
@@ -25,10 +24,7 @@ const connectionVertexShader = `
   void main() {
     vColor = color;
     vPosition = position.y;
-    vec4 modelPosition = modelMatrix * vec4(position, 1.0);
-    vec4 viewPosition = viewMatrix * modelPosition;
-    vec4 projectedPosition = projectionMatrix * viewPosition;
-    gl_Position = projectedPosition;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
 
@@ -38,24 +34,42 @@ const connectionFragmentShader = `
   varying float vPosition;
   
   void main() {
-    // Create flowing effect along the connection
-    float flow = sin(vPosition * 10.0 + time * 3.0) * 0.5 + 0.5;
+    // Detect available connections (medium blue color range)
+    bool isAvailable = vColor.r > 0.2 && vColor.r < 0.3 && vColor.g > 0.5 && vColor.b > 0.9;
     
-    // Create pulsating glow effect
-    float pulse = sin(time * 2.0) * 0.2 + 0.8;
+    vec3 finalColor;
     
-    // Combine effects
-    vec3 finalColor = vColor * (1.0 + flow * 0.3) * pulse;
+    if (isAvailable) {
+      // Available connections: thick pulsing colors
+      float pulse = sin(time * 3.0) * 0.4 + 0.6; // Pulsing between 0.2 and 1.0
+      
+      // Cycle through bright colors
+      float colorCycle = time * 2.0;
+      vec3 color1 = vec3(0.0, 0.8, 1.0); // Bright cyan
+      vec3 color2 = vec3(0.2, 1.0, 0.2); // Bright green  
+      vec3 color3 = vec3(1.0, 0.4, 0.8); // Bright pink
+      
+      float phase = mod(colorCycle, 3.0);
+      if (phase < 1.0) {
+        finalColor = mix(color1, color2, phase);
+      } else if (phase < 2.0) {
+        finalColor = mix(color2, color3, phase - 1.0);
+      } else {
+        finalColor = mix(color3, color1, phase - 2.0);
+      }
+      
+      finalColor *= pulse * 1.5; // Apply pulsing and boost brightness
+    } else {
+      // Default connections: thick white lines
+      finalColor = vec3(1.0, 1.0, 1.0); // Pure white
+    }
     
-    // Add subtle variation based on time
-    finalColor += vec3(sin(time * 0.2) * 0.05, sin(time * 0.3) * 0.05, sin(time * 0.4) * 0.05);
-    
-    gl_FragColor = vec4(finalColor, 0.9);
+    gl_FragColor = vec4(finalColor, 1.0);
   }
 `;
 
 // Using forwardRef for API compatibility
-const ConnectionsBatched = forwardRef<InstancedMesh, ConnectionsBatchedProps>(
+export const ConnectionsBatched = forwardRef<InstancedMesh, ConnectionsBatchedProps>(
   (props, ref) => {
   const { connections, nodePositions, selectedNodeId, hoveredNodeId, positionSynchronizer } = props;
   
@@ -110,14 +124,16 @@ const ConnectionsBatched = forwardRef<InstancedMesh, ConnectionsBatchedProps>(
         const isSelected = selectedNodeId === connection.source || selectedNodeId === connection.target;
         const isHovered = hoveredNodeId === connection.source || hoveredNodeId === connection.target;
         
-        // Enhanced color logic
+        // Enhanced color logic with available state
         let color;
         if (isSelected) {
           color = new THREE.Color(0x00bfff); // Bright blue for selected
         } else if (isHovered) {
           color = new THREE.Color(0x88ccff); // Light blue for hovered
+        } else if (selectedNodeId && (connection.source === selectedNodeId || connection.target === selectedNodeId)) {
+          color = new THREE.Color(0x4488ff); // Medium blue for available connections
         } else {
-          color = new THREE.Color(0x444444); // Default dark gray
+          color = new THREE.Color(0x666666); // Lighter gray for default
         }
         
         colors.set([color.r, color.g, color.b], lineCount * 6);
@@ -129,30 +145,38 @@ const ConnectionsBatched = forwardRef<InstancedMesh, ConnectionsBatchedProps>(
     return { positions, colors, lineCount };
   }, [connections, nodePositions, selectedNodeId, hoveredNodeId]); // Add missing dependencies
 
+  // Memoize geometry initialization to prevent unnecessary updates
   useEffect(() => {
-    console.log("ConnectionsBatched initializing geometry with:", {
-      lineCount,
-      positionsLength: positions.length,
-      colorsLength: colors.length
-    });
-    
     const geometry = geometryRef.current;
-    if (!geometry) {
-      console.warn("ConnectionsBatched: geometryRef.current is null");
-      return;
+    if (!geometry) return;
+
+    // Only initialize if attributes don't exist or have different lengths
+    const currentPositions = geometry.attributes.position?.array;
+    const currentColors = geometry.attributes.color?.array;
+    
+    if (!currentPositions || 
+        !currentColors || 
+        currentPositions.length !== positions.length || 
+        currentColors.length !== colors.length) {
+      
+      try {
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        geometry.setDrawRange(0, lineCount * 2);
+      } catch (error) {
+        console.error("Error initializing geometry attributes:", error);
+      }
     }
 
-    try {
-      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-      geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-      geometry.setDrawRange(0, lineCount * 2);
-
-      geometry.attributes.position.needsUpdate = true;
-      geometry.attributes.color.needsUpdate = true;
-      
-      console.log("ConnectionsBatched: Successfully initialized geometry attributes");
-    } catch (error) {
-      console.error("Error initializing geometry attributes:", error);
+    // Always update the data
+    const positionAttribute = geometry.attributes.position as THREE.Float32BufferAttribute;
+    const colorAttribute = geometry.attributes.color as THREE.Float32BufferAttribute;
+    
+    if (positionAttribute && colorAttribute) {
+      positionAttribute.array.set(positions);
+      colorAttribute.array.set(colors);
+      positionAttribute.needsUpdate = true;
+      colorAttribute.needsUpdate = true;
     }
   }, [positions, colors, lineCount]);
 
@@ -246,13 +270,29 @@ const ConnectionsBatched = forwardRef<InstancedMesh, ConnectionsBatchedProps>(
         if (isHighPriorityConnection || shouldUpdateColors) {
           let color;
           if (isSelected) {
-            // Simplified color animation for selected connections
-            const pulse = Math.sin(state.clock.elapsedTime * 2) * 0.1 + 0.9;
+            // Enhanced pulse animation for selected connections
+            const pulse = Math.sin(state.clock.elapsedTime * 2.5) * 0.2 + 1.0;
             color = new THREE.Color(0x00bfff).multiplyScalar(pulse);
+            if (connectionMaterialRef.current) {
+              connectionMaterialRef.current.linewidth = 2;
+            }
           } else if (isHovered) {
             color = new THREE.Color(0x88ccff);
+            if (connectionMaterialRef.current) {
+              connectionMaterialRef.current.linewidth = 2;
+            }
+          } else if (selectedNodeId && (connection.source === selectedNodeId || connection.target === selectedNodeId)) {
+            // Enhanced pulse for available connections
+            const availablePulse = Math.sin(state.clock.elapsedTime * 2.0) * 0.3 + 1.0;
+            color = new THREE.Color(0x4488ff).multiplyScalar(availablePulse);
+            if (connectionMaterialRef.current) {
+              connectionMaterialRef.current.linewidth = 3; // Thicker for available connections
+            }
           } else {
-            color = new THREE.Color(0x444444);
+            color = new THREE.Color(0x666666);
+            if (connectionMaterialRef.current) {
+              connectionMaterialRef.current.linewidth = 1;
+            }
           }
           
           colorAttribute.setXYZ(i * 2, color.r, color.g, color.b);
@@ -278,7 +318,8 @@ const ConnectionsBatched = forwardRef<InstancedMesh, ConnectionsBatchedProps>(
     if (geometryRef.current) {
       const material = new THREE.ShaderMaterial({
         uniforms: {
-          time: { value: 0 }
+          time: { value: 0 },
+          thickness: { value: 2.0 } // Base thickness
         },
         vertexShader: connectionVertexShader,
         fragmentShader: connectionFragmentShader,
@@ -286,10 +327,7 @@ const ConnectionsBatched = forwardRef<InstancedMesh, ConnectionsBatchedProps>(
         transparent: true,
         side: DoubleSide,
         depthWrite: false,
-        // Ensure lines are always rendered on top
-        depthTest: true,
-        // Increase line brightness for better visibility
-        opacity: 1.0
+        depthTest: true
       });
       
       if (lineSegmentsRef.current) {
@@ -328,4 +366,3 @@ const ConnectionsBatched = forwardRef<InstancedMesh, ConnectionsBatchedProps>(
   );
 });
 
-export { ConnectionsBatched };

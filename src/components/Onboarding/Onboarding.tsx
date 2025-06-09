@@ -9,12 +9,14 @@ interface NodeHoverEvent extends Event {
   detail: {
     position: { x: number; y: number };
     nodeId: string;
+    isClickable: boolean;
   };
 }
 
 const Onboarding: React.FC = () => {
   const [showIntro, setShowIntro] = useState(false);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
+  const [isCurrentNodeClickable, setIsCurrentNodeClickable] = useState(false);
   // Check if user has seen the intro before
   useEffect(() => {
     const hasSeenIntro = localStorage.getItem('hasSeenIntro') === 'true';
@@ -39,11 +41,13 @@ const Onboarding: React.FC = () => {
       const customEvent = e as NodeHoverEvent;
       if (customEvent.detail && customEvent.detail.position) {
         setTooltipPosition(customEvent.detail.position);
+        setIsCurrentNodeClickable(customEvent.detail.isClickable);
       }
     };
 
     const handleNodeUnhover = () => {
       setTooltipPosition(null);
+      setIsCurrentNodeClickable(false);
     };
 
     // Add event listeners for custom node hover events
@@ -68,7 +72,7 @@ const Onboarding: React.FC = () => {
     <>
       {showIntro && <IntroductionOverlay onClose={handleCloseIntro} />}
       <NodeTooltip 
-        text="Click to explore this node" 
+        text={isCurrentNodeClickable ? "Click to explore this node" : ""} 
         position={tooltipPosition} 
       />
       <HelpIcon onResetIntro={handleResetIntro} />

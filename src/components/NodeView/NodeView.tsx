@@ -602,13 +602,18 @@ const NodeView = () => {
       </div>
       
       {/* Mini constellation for context - fixed in bottom right corner */}
-      <div
-        ref={miniConstellationRef}
-        className="mini-constellation"
-      >
+      <div style={{
+        position: 'absolute',
+        bottom: '20px',
+        right: '20px',
+        width: '300px',
+        height: '300px',
+        pointerEvents: 'auto'
+      }}>
         <Suspense fallback={<SideComponentLoading />}>
           <MiniConstellation
             currentNodeId={node.id}
+            ref={miniConstellationRef}
           />
         </Suspense>
       </div>

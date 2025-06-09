@@ -12,10 +12,10 @@ import { navigateToNode } from '../../store/slices/readerSlice';
 import { visitNode } from '../../store/slices/nodesSlice';
 import { AppDispatch } from '../../store';
 import { ConstellationNode, NodePositions } from '../../types';
-import { forwardRef, useMemo, useRef, useEffect } from 'react';
-import { Color, InstancedMesh, ShaderMaterial, Frustum, Matrix4, Vector3 } from 'three';
+import { forwardRef, useMemo, useRef } from 'react';
+import { Color, InstancedMesh, ShaderMaterial } from 'three';
 import * as THREE from 'three';
-import { useFrame, useThree } from '@react-three/fiber';
+import { useFrame } from '@react-three/fiber';
 import type { ThreeEvent } from '@react-three/fiber';
 import { Text } from '@react-three/drei';
 
@@ -159,98 +159,8 @@ const getNodeColor = (character: string | undefined): Color => {
   return new Color('#ffffff');
 };
 
-// We've fixed node visibility by:
-// 1. Using larger distance thresholds to prevent aggressive culling
-// 2. Implementing proper hover/unhover event handling
-// 3. Using direct position updates instead of matrix manipulation
-// 4. Ensuring proper color assignment for all character types
 
-// Create a class for managing node visibility and LOD
-class NodeVisibilityManager {
-  private frustum: Frustum;
-  private matrix: Matrix4;
-  private camera: THREE.Camera;
-  private visibleNodes: Set<string>;
-  private distanceThresholds: { [key: string]: number };
-  private lastUpdateTime: number;
-  private updateInterval: number;
-  
-  constructor(camera: THREE.Camera) {
-    this.frustum = new Frustum();
-    this.matrix = new Matrix4();
-    this.camera = camera;
-    this.visibleNodes = new Set();
-    this.distanceThresholds = {
-      high: 60,   // High detail within 60 units (increased from 50)
-      medium: 90,  // Medium detail within 90 units (increased from 70)
-      low: 120     // Low detail within 120 units (increased from 90)
-    };
-    this.lastUpdateTime = 0;
-    this.updateInterval = 150; // Update visibility more frequently (was 250ms)
-  }
-  
-  updateFrustum() {
-    this.matrix.multiplyMatrices(
-      this.camera.projectionMatrix,
-      this.camera.matrixWorldInverse
-    );
-    this.frustum.setFromProjectionMatrix(this.matrix);
-  }
-  
-  shouldUpdate(time: number): boolean {
-    if (time - this.lastUpdateTime > this.updateInterval) {
-      this.lastUpdateTime = time;
-      return true;
-    }
-    return false;
-  }
-  
-  checkNodeVisibility(nodeId: string, position: Vector3): {
-    isVisible: boolean,
-    detailLevel: 'high' | 'medium' | 'low' | 'culled'
-  } {
-    // Track nodes that we've processed
-    if (this.visibleNodes.has(nodeId)) {
-      // Don't delete from visibleNodes here - we want to maintain the set
-    }
-    
-    // Calculate distance for LOD purposes
-    const distance = position.distanceTo(this.camera.position);
-    
-    // CRITICAL FIX: Always return nodes as visible, even if outside frustum
-    // This ensures all nodes are always visible, regardless of camera position
-    // We'll just use the distance for LOD purposes
-    
-    // Add to visible nodes set
-    this.visibleNodes.add(nodeId);
-    
-    // Distance already calculated above
-    
-    // Determine detail level based on distance
-    let detailLevel: 'high' | 'medium' | 'low' | 'culled';
-    if (distance <= this.distanceThresholds.high) {
-      detailLevel = 'high';
-    } else if (distance <= this.distanceThresholds.medium) {
-      detailLevel = 'medium';
-    } else if (distance <= this.distanceThresholds.low) {
-      detailLevel = 'low';
-    } else {
-      detailLevel = 'culled';
-    }
-    
-    // Add to visible nodes
-    this.visibleNodes.add(nodeId);
-    
-    return { isVisible: true, detailLevel };
-  }
-  
-  getVisibleNodeCount(): number {
-    return this.visibleNodes.size;
-  }
-}
-
-export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
-  (props, ref) => {
+export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((props, ref) => {
   const {
     nodes,
     nodePositions,
@@ -267,13 +177,6 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
   const reduxSelectedNodeId = useSelector(selectSelectedNodeId);
   const selectedNodeId = overrideSelectedNodeId ?? reduxSelectedNodeId;
   
-  // Get camera from Three.js context for visibility culling
-  const { camera } = useThree();
-  
-  // Create visibility manager
-  const visibilityManagerRef = useRef<NodeVisibilityManager | null>(null);
-  // Track nodes visibility
-  const forceUpdateCounter = useRef({ count: 0 });
   
   const connectedNodeIds = useMemo(() => {
     if (!selectedNodeId) return new Set<string>();
@@ -302,12 +205,6 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
     });
   }, [nodes, nodePositions]);
   
-  // Create visibility manager on initialization
-  useEffect(() => {
-    if (!visibilityManagerRef.current) {
-      visibilityManagerRef.current = new NodeVisibilityManager(camera);
-    }
-  }, [camera]);
   
   // Update shader time uniform and apply noise movement with optimized LOD
   // Frame counter for throttling updates
@@ -316,67 +213,14 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
   const lastUpdateMaterialsTime = useRef(0);
   
   // Enhanced optimization: Using variable update rates based on priority
-  useFrame((state) => {
+  useFrame((state): void => {
     const time = state.clock.elapsedTime;
     frameCount.current += 1;
     
-    // Initialize visibility manager if needed
-    if (!visibilityManagerRef.current) {
-      visibilityManagerRef.current = new NodeVisibilityManager(camera);
-    }
-
     // Get synchronized positions from the position synchronizer
     const currentPositions = positionSynchronizer.updatePositions(time, props.isMinimap);
-    
-    // Update frustum for visibility checks (less frequently)
-    if (visibilityManagerRef.current.shouldUpdate(time)) {
-      visibilityManagerRef.current.updateFrustum();
       
-      // Force occasional full visibility update to catch any missed nodes
-      forceUpdateCounter.current.count++;
-      
-      // More frequent checks (every second) to ensure nodes stay visible
-      if (forceUpdateCounter.current.count % 6 === 0) {
-        console.log("Performing visibility validation check...");
-        let visibleCount = 0;
-        
-        // Every ~1 second, ensure all nodes have been evaluated
-        nodes.forEach(node => {
-          const mesh = nodeMeshRefs.current[nodes.indexOf(node)];
-          if (mesh) {
-            // Always ensure nodes are visible
-            const isImportant = node.id === selectedNodeId ||
-                             node.id === hoveredNodeId ||
-                             connectedNodeIds.has(node.id);
-            
-            if (mesh.visible === false) {
-              // Force important nodes to always be visible
-              if (isImportant) {
-                console.log(`Forcing visibility for important node: ${node.id}`);
-                mesh.visible = true;
-              }
-            }
-            
-            if (mesh.visible) {
-              visibleCount++;
-            }
-          }
-        });
-        
-        console.log(`Visible nodes: ${visibleCount} / ${nodes.length}`);
-        
-        // Emergency fallback - if too few nodes are visible, make all visible
-        if (visibleCount < nodes.length * 0.7) {
-          console.warn("Too few nodes visible, forcing all nodes to be visible");
-          nodes.forEach((_, idx) => {
-            const mesh = nodeMeshRefs.current[idx];
-            if (mesh) {
-              mesh.visible = true;
-            }
-          });
-        }
-      }
-    }
+    // All nodes are always visible, no need for validation
     
     // Time-based throttling for shader updates
     const shouldUpdateMaterials = time - lastUpdateMaterialsTime.current > 0.05; // 50ms
@@ -461,38 +305,20 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
           }
         }
         
-        // Create a Vector3 for position (reused for visibility check)
-        const position = new THREE.Vector3(origPos[0], origPos[1], origPos[2]);
-        
-        // Check visibility and LOD level
-        const { detailLevel } = visibilityManagerRef.current.checkNodeVisibility(
-          node.id,
-          position
-        );
-        
-        // Define isImportantNode once to avoid duplicates
+        // Always update all nodes
+        const shouldUpdate = true;
         const isImportantNode = node.id === selectedNodeId ||
                                node.id === hoveredNodeId ||
                                connectedNodeIds.has(node.id);
-                                
-        // Always show all nodes regardless of culling
-        // Forced visibility fix to prevent nodes from disappearing
+        
+        // Always show the node
         nodeMesh.visible = true;
         
-        // Only hide force field for non-important nodes
+        // Show force field only for important nodes
         const forceMesh = forceFieldMeshRefs.current[i];
         if (forceMesh) {
           forceMesh.visible = isImportantNode;
         }
-        
-        
-        // More consistent update frequency with prioritization for important nodes
-        // Always update important nodes and those in high/medium detail levels
-        const shouldUpdate =
-          isImportantNode || // Always update important nodes
-          detailLevel === 'high' || // Always update high detail nodes
-          (detailLevel === 'medium' && frameCount.current % 2 === 0) || // Medium every 2nd frame
-          (detailLevel === 'low' && frameCount.current % 3 === 0);  // Low every 3rd frame
           
         if (shouldUpdate) {
           // CRITICAL FIX: Use synchronized positions from the position synchronizer
@@ -509,8 +335,8 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
           
           // Update force field position only if it exists and node is important
           const forceMesh = forceFieldMeshRefs.current[i];
-          if (forceMesh && (isImportantNode || detailLevel === 'high')) {
-            forceMesh.visible = isImportantNode; // Only show for important nodes
+          if (forceMesh && isImportantNode) {
+            forceMesh.visible = true;
             forceMesh.position.copy(nodeMesh.position);
           } else if (forceMesh) {
             forceMesh.visible = false;
@@ -708,6 +534,30 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
                 if (node.id !== hoveredNodeId) {
                   dispatch(nodeHovered(node.id));
                   
+                  // Determine if this node is clickable using the same logic as onClick
+                  let isClickable = false;
+                  
+                  if (isInitialChoicePhase) {
+                    // In initial choice phase, only designated starting nodes are clickable
+                    isClickable = isDesignatedStartingNode;
+                  } else {
+                    // Normal click logic (outside initial choice phase)
+                    if (onNodeClick) { // This path is typically for MiniConstellation
+                      isClickable = !clickableNodeIds || clickableNodeIds.includes(node.id);
+                    } else { // This path is for the main ConstellationView
+                      if (selectedNodeId === null) { // If no node is selected, any node can be clicked
+                        isClickable = true;
+                      } else { // If a node is already selected, only connected nodes can be clicked
+                        const isConnectedToCurrentSelected = connections.some(
+                          (c) =>
+                            (c.start === selectedNodeId && c.end === node.id) ||
+                            (c.start === node.id && c.end === selectedNodeId)
+                        );
+                        isClickable = isConnectedToCurrentSelected;
+                      }
+                    }
+                  }
+                  
                   // Emit custom event for tooltip positioning
                   // Just use client coordinates from the event directly
                   const nodeHoverEvent = new CustomEvent('node-hover', {
@@ -716,7 +566,8 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
                         x: e.clientX,
                         y: e.clientY - 40 // Position tooltip 40px above cursor
                       },
-                      nodeId: node.id
+                      nodeId: node.id,
+                      isClickable: isClickable
                     }
                   });
                   window.dispatchEvent(nodeHoverEvent);
