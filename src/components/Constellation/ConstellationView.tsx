@@ -1,6 +1,6 @@
 import { useSelector, useDispatch } from 'react-redux';
 import { selectConstellationNodes, selectConnections } from '../../store/slices/nodesSlice';
-import { setViewMode } from '../../store/slices/interfaceSlice';
+import { setViewMode, selectIsInitialChoicePhase } from '../../store/slices/interfaceSlice';
 import './ConstellationView.css';
 import { useMemo, useRef, lazy, Suspense, useState, useEffect } from 'react';
 import { InstancedMesh } from 'three';
@@ -44,6 +44,7 @@ const ConstellationView = () => {
   const [webGLError, setWebGLError] = useState<Error | null>(null);
   const nodes = useSelector(selectConstellationNodes);
   const connections = useSelector(selectConnections);
+  const isInitialChoicePhase = useSelector(selectIsInitialChoicePhase);
   const instancedMeshRef = useRef<InstancedMesh>(null!);
   const [contextId, setContextId] = useState<string | null>(null);
   
@@ -167,6 +168,7 @@ const ConstellationView = () => {
           connections={connectionObjects}
           mappedConnections={mappedConnections}
           instancedMeshRef={instancedMeshRef}
+          isInitialChoicePhase={isInitialChoicePhase}
           onWebGLContextCreated={handleWebGLContextCreated}
           onWebGLError={(error) => {
             console.error("[ConstellationView] WebGL error reported:", error);

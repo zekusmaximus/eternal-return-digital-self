@@ -27,6 +27,7 @@ interface ThreeJSComponentsProps {
   instancedMeshRef: MutableRefObject<InstancedMesh>;
   onWebGLContextCreated?: (renderer: THREE.WebGLRenderer) => void; // Callback when WebGL renderer is created
   onWebGLError?: (error: Error) => void; // Callback for WebGL errors
+  isInitialChoicePhase: boolean;
 }
 
 // WebGL error handler component
@@ -162,7 +163,8 @@ const ThreeJSComponents: React.FC<ThreeJSComponentsProps> = ({
   mappedConnections,
   instancedMeshRef,
   onWebGLContextCreated,
-  onWebGLError
+  onWebGLError,
+  isInitialChoicePhase,
 }) => {
   return (
     <Canvas
@@ -272,6 +274,7 @@ const ThreeJSComponents: React.FC<ThreeJSComponentsProps> = ({
         nodes={nodes}
         nodePositions={nodePositions}
         connections={convertConnections(connections)}
+        isInitialChoicePhase={isInitialChoicePhase}
       />
       <ConnectionsBatched
         // No longer passing ref here since ConnectionsBatched doesn't use it

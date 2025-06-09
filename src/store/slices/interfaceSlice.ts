@@ -23,6 +23,7 @@ export interface InterfaceState {
   transitionSpeed: number;
   helpModalOpen: boolean;
   aboutModalOpen: boolean;
+  isInitialChoicePhase: boolean;
 }
 
 const initialState: InterfaceState = {
@@ -45,6 +46,7 @@ const initialState: InterfaceState = {
   transitionSpeed: 500,
   helpModalOpen: false,
   aboutModalOpen: false,
+  isInitialChoicePhase: true,
 };
 
 const interfaceSlice = createSlice({
@@ -118,6 +120,9 @@ const interfaceSlice = createSlice({
     returnToConstellation: (state) => {
       state.viewMode = 'constellation';
     },
+    setInitialChoicePhaseCompleted: (state) => {
+      state.isInitialChoicePhase = false;
+    },
   },
 });
 
@@ -139,6 +144,7 @@ export const {
   nodeUnhovered,
   nodeSelected,
   returnToConstellation,
+  setInitialChoicePhaseCompleted,
 } = interfaceSlice.actions;
 
 export const selectViewMode = (state: RootState) => state.interface.viewMode;
@@ -167,5 +173,6 @@ export const selectHoveredNodeId = (state: RootState) =>
   state.interface.hoveredNodeId;
 export const selectSelectedNodeId = (state: RootState) =>
   state.interface.selectedNodeId;
+export const selectIsInitialChoicePhase = (state: RootState) => state.interface.isInitialChoicePhase;
 
 export default interfaceSlice.reducer;
