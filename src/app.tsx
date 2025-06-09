@@ -147,29 +147,33 @@ function AppContent() {
       console.log(`[App] View transition: ${prevViewModeRef.current} -> ${viewMode}`);
       
       // Record the transition for debugging
-      setViewTransitions(prev => [...prev, {
-        from: prevViewModeRef.current,
-        to: viewMode,
-        timestamp: Date.now()
-      }]);
-      
-      // Log performance data at transition
-      if (performanceRecords.length > 0) {
-        const latestRecord = performanceRecords[performanceRecords.length - 1];
-        console.log('[App] Performance at transition:', {
-          fps: latestRecord.fps.toFixed(1),
-          memory: latestRecord.memory ? {
-            used: (latestRecord.memory.usedJSHeapSize / (1024 * 1024)).toFixed(1) + 'MB',
-            total: (latestRecord.memory.totalJSHeapSize / (1024 * 1024)).toFixed(1) + 'MB'
-          } : 'unavailable',
-          transitions: viewTransitions.length + 1
-        });
-      }
+      setViewTransitions(prev => {
+        const newTransitions = [...prev, {
+          from: prevViewModeRef.current,
+          to: viewMode,
+          timestamp: Date.now()
+        }];
+
+        // Log performance data at transition using the ref for latest data
+        const records = latestRecordsRef.current;
+        if (records.length > 0) {
+          const latestRecord = records[records.length - 1];
+          console.log('[App] Performance at transition:', {
+            fps: latestRecord.fps.toFixed(1),
+            memory: latestRecord.memory ? {
+              used: (latestRecord.memory.usedJSHeapSize / (1024 * 1024)).toFixed(1) + 'MB',
+              total: (latestRecord.memory.totalJSHeapSize / (1024 * 1024)).toFixed(1) + 'MB'
+            } : 'unavailable',
+            transitions: newTransitions.length
+          });
+        }
+        return newTransitions;
+      });
       
       // Update previous value
       prevViewModeRef.current = viewMode;
     }
-  }, [viewMode, viewTransitions, performanceRecords]);
+  }, [viewMode]); // Only re-run when viewMode changes
   
   // Initialize nodes on mount
   useEffect(() => {
@@ -186,7 +190,7 @@ function AppContent() {
            event.message.includes('THREE.WebGLRenderer'))) {
         console.error('[App] WebGL context loss detected at app level!', {
           message: event.message,
-          viewMode,
+          viewMode: viewMode,
           transitions: viewTransitions.length,
           timestamp: Date.now()
         });
@@ -199,7 +203,7 @@ function AppContent() {
       console.error('[App] WebGL context loss event received from WebGLContextManager', {
         contextId,
         type,
-        viewMode,
+        viewMode: viewMode,
         timestamp: Date.now()
       });
       
@@ -232,7 +236,7 @@ function AppContent() {
       webGLContextManager.disposeAllContexts();
       console.log('[App] Disposed all WebGL contexts on unmount');
     };
-  }, [viewMode, viewTransitions]);
+  }, [viewMode, viewTransitions.length]); // Re-register listeners if viewMode or transitions change to ensure handlers have fresh data.
   
   return (
     <div className="app-container">

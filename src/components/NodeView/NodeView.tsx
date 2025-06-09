@@ -1,6 +1,6 @@
 // src/components/NodeView/NodeView.tsx
 
-import { useEffect, useState, lazy, Suspense, useRef, useMemo } from 'react';
+import { useEffect, useState, lazy, Suspense, useRef, useMemo, useCallback } from 'react';
 import ErrorBoundary from '../common/ErrorBoundary';
 import SimpleTextRenderer from './SimpleTextRenderer';
 import { viewManager } from '../../services/ViewManager';
@@ -86,7 +86,6 @@ const NodeView = () => {
   const uniqueViewKey = useMemo(() => viewManager.getUniqueViewKey(), []);
 
   // Reference for MiniConstellation
-  const miniConstellationRef = useRef<HTMLDivElement>(null);
 
   // State to control transition between ReactMarkdown and NarramorphRenderer
   // Moved to top level before any conditional returns
@@ -103,6 +102,24 @@ const NodeView = () => {
   
   // Reference to content container for visibility debugging
   const contentContainerRef = useRef<HTMLDivElement>(null);
+
+  // Define onVisibilityChange using useCallback
+  const onVisibilityChange = useCallback((isVisible: boolean) => {
+    console.log(`[NodeView] Content visibility changed to: ${isVisible ? 'visible' : 'hidden'}`);
+
+    // BUGFIX: If visibility changes to hidden, force it back to visible
+    if (!isVisible && contentContainerRef.current) {
+      console.warn('[NodeView] Forcing content visibility after hidden state detected');
+      contentContainerRef.current.style.display = 'block';
+      contentContainerRef.current.style.visibility = 'visible';
+      contentContainerRef.current.style.opacity = '1';
+
+      // Don't update debug state to indicate an issue
+      return;
+    }
+
+    setContentDebug(prev => ({ ...prev, visibilityIssue: !isVisible }));
+  }, []);
   
   // Debug state to track content status
   const [contentDebug, setContentDebug] = useState({
@@ -113,6 +130,40 @@ const NodeView = () => {
     visibilityIssue: false,
     errorOccurred: false
   });
+
+  // Define onRenderComplete using useCallback to memoize it
+  const onRenderComplete = useCallback(() => {
+    console.log('[NodeView] SimpleTextRenderer completed rendering');
+
+    // BUGFIX: Ensure content remains visible after render
+    if (contentContainerRef.current) {
+      console.log('[NodeView] Forcing container visibility after render complete');
+      contentContainerRef.current.style.display = 'block';
+      contentContainerRef.current.style.visibility = 'visible';
+      contentContainerRef.current.style.opacity = '1';
+    }
+
+    setContentDebug(prev => ({ ...prev, visibilityIssue: false }));
+
+    // BUGFIX: Set a verification check after render
+    setTimeout(() => {
+      if (contentContainerRef.current) {
+        const isStillVisible =
+          contentContainerRef.current.offsetParent !== null &&
+          window.getComputedStyle(contentContainerRef.current).display !== 'none' &&
+          window.getComputedStyle(contentContainerRef.current).visibility !== 'hidden';
+
+        console.log(`[NodeView] Post-render visibility check: ${isStillVisible ? 'visible' : 'not visible'}`);
+
+        if (!isStillVisible) {
+          console.warn('[NodeView] Content became invisible after render - forcing visibility');
+          contentContainerRef.current.style.display = 'block';
+          contentContainerRef.current.style.visibility = 'visible';
+          contentContainerRef.current.style.opacity = '1';
+        }
+      }
+    }, 500);
+  }, []); // Empty dependency array ensures this function is not recreated on re-renders
   
   // Register with ViewManager
   useEffect(() => {
@@ -432,57 +483,11 @@ const NodeView = () => {
             <SimpleTextRenderer
               key={`simple-${node.id}-${node.visitCount}`}
               nodeId={node.id}
-              onRenderComplete={() => {
-                console.log('[NodeView] SimpleTextRenderer completed rendering');
-                
-                // BUGFIX: Ensure content remains visible after render
-                if (contentContainerRef.current) {
-                  console.log('[NodeView] Forcing container visibility after render complete');
-                  contentContainerRef.current.style.display = 'block';
-                  contentContainerRef.current.style.visibility = 'visible';
-                  contentContainerRef.current.style.opacity = '1';
-                }
-                
-                setContentDebug(prev => ({ ...prev, visibilityIssue: false }));
-                
-                // BUGFIX: Set a verification check after render
-                setTimeout(() => {
-                  if (contentContainerRef.current) {
-                    const isStillVisible =
-                      contentContainerRef.current.offsetParent !== null &&
-                      window.getComputedStyle(contentContainerRef.current).display !== 'none' &&
-                      window.getComputedStyle(contentContainerRef.current).visibility !== 'hidden';
-                      
-                    console.log(`[NodeView] Post-render visibility check: ${isStillVisible ? 'visible' : 'not visible'}`);
-                    
-                    if (!isStillVisible) {
-                      console.warn('[NodeView] Content became invisible after render - forcing visibility');
-                      contentContainerRef.current.style.display = 'block';
-                      contentContainerRef.current.style.visibility = 'visible';
-                      contentContainerRef.current.style.opacity = '1';
-                    }
-                  }
-                }, 500);
-              }}
-              onVisibilityChange={(isVisible: boolean) => {
-                console.log(`[NodeView] Content visibility changed to: ${isVisible ? 'visible' : 'hidden'}`);
-                
-                // BUGFIX: If visibility changes to hidden, force it back to visible
-                if (!isVisible && contentContainerRef.current) {
-                  console.warn('[NodeView] Forcing content visibility after hidden state detected');
-                  contentContainerRef.current.style.display = 'block';
-                  contentContainerRef.current.style.visibility = 'visible';
-                  contentContainerRef.current.style.opacity = '1';
-                  
-                  // Don't update debug state to indicate an issue
-                  return;
-                }
-                
-                setContentDebug(prev => ({ ...prev, visibilityIssue: !isVisible }));
-              }}
+              onRenderComplete={onRenderComplete}
+              onVisibilityChange={onVisibilityChange}
             />
           </div>
-        ) : (
+) : (
           // Try advanced rendering if conditions allow
           <Suspense fallback={<ContentLoading />}>
             {useNarramorph && !useWebGLFallback ? (
@@ -611,10 +616,7 @@ const NodeView = () => {
         pointerEvents: 'auto'
       }}>
         <Suspense fallback={<SideComponentLoading />}>
-          <MiniConstellation
-            currentNodeId={node.id}
-            ref={miniConstellationRef}
-          />
+          <MiniConstellation />
         </Suspense>
       </div>
       

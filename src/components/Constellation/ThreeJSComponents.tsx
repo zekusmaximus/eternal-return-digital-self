@@ -31,6 +31,9 @@ interface ThreeJSComponentsProps {
     updatePositions: (time: number, isMinimap?: boolean) => { [key: string]: [number, number, number] };
     getCurrentPositions: () => { [key: string]: [number, number, number] };
   };
+  selectedNodeId?: string | null;
+  hoveredNodeId?: string | null;
+  isMinimap?: boolean;
 }
 
 // WebGL error handler component
@@ -124,6 +127,9 @@ const ThreeJSComponents: React.FC<ThreeJSComponentsProps> = ({
   onWebGLError,
   isInitialChoicePhase,
   positionSynchronizer,
+  selectedNodeId,
+  hoveredNodeId,
+  isMinimap,
 }) => {
   // Memoize Canvas component to prevent unnecessary recreation
   return useMemo(() => (
@@ -222,6 +228,9 @@ const ThreeJSComponents: React.FC<ThreeJSComponentsProps> = ({
         connections={mappedConnections}
         nodePositions={nodePositions}
         positionSynchronizer={positionSynchronizer}
+        selectedNodeId={selectedNodeId}
+        hoveredNodeId={hoveredNodeId}
+        isMinimap={isMinimap}
       />
       
       {/* Add WebGL error handler */}
@@ -248,7 +257,7 @@ const ThreeJSComponents: React.FC<ThreeJSComponentsProps> = ({
         minPolarAngle={0} // Allow full vertical rotation
       />
     </Canvas>
-  ), [nodes, nodePositions, connections, mappedConnections, instancedMeshRef, isInitialChoicePhase, onWebGLContextCreated, onWebGLError, positionSynchronizer]);
+  ), [nodes, nodePositions, connections, mappedConnections, instancedMeshRef, isInitialChoicePhase, onWebGLContextCreated, onWebGLError, positionSynchronizer, selectedNodeId, hoveredNodeId, isMinimap]);
 };
 
 // Simplified stars component with fixed parameters to reduce render overhead

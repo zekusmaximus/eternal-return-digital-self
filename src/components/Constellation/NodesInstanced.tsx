@@ -300,8 +300,9 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
           nodeMesh.scale.set(targetScale, targetScale, targetScale);
         } else {
           // Ensure non-pulsing nodes (or minimap nodes, or when not in initial phase) have normal scale
-          if (nodeMesh.scale.x !== 1.0 || nodeMesh.scale.y !== 1.0 || nodeMesh.scale.z !== 1.0) {
-            nodeMesh.scale.set(1.0, 1.0, 1.0);
+          const baseScale = props.isMinimap ? 0.5 : 1.0;
+          if (nodeMesh.scale.x !== baseScale || nodeMesh.scale.y !== baseScale || nodeMesh.scale.z !== baseScale) {
+            nodeMesh.scale.set(baseScale, baseScale, baseScale);
           }
         }
         
@@ -530,6 +531,7 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
                 }
               }}
               onPointerOver={(e: ThreeEvent<PointerEvent>) => {
+                if (props.isMinimap) return; // Do not show hover effects in minimap
                 if (e.stopPropagation) e.stopPropagation();
                 if (node.id !== hoveredNodeId) {
                   dispatch(nodeHovered(node.id));
@@ -574,6 +576,7 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
                 }
               }}
               onPointerOut={(e: ThreeEvent<PointerEvent>) => {
+                if (props.isMinimap) return;
                 if (e.stopPropagation) e.stopPropagation();
                 dispatch(nodeUnhovered());
                 
@@ -584,6 +587,7 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
               
               // Fix for stuck hover: Add pointer leave event
               onPointerLeave={(e: ThreeEvent<PointerEvent>) => {
+                if (props.isMinimap) return;
                 if (e.stopPropagation) e.stopPropagation();
                 dispatch(nodeUnhovered());
                 

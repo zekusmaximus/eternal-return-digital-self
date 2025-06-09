@@ -1,21 +1,20 @@
 import { useMemo, useRef, useState, useEffect, forwardRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { selectConstellationNodes, selectConnections } from '../../store/slices/nodesSlice';
-import { nodeSelected } from '../../store/slices/interfaceSlice';
+import { nodeSelected, selectSelectedNodeId } from '../../store/slices/interfaceSlice';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { NodesInstanced } from '../Constellation/NodesInstanced';
 import { ConnectionsBatched } from '../Constellation/ConnectionsBatched';
 import { InstancedMesh } from 'three';
 
-interface MiniConstellationProps {
-  currentNodeId: string;
-}
-
+// No props are needed, so we can remove the interface.
+// No props are needed for this component.
 // Unique ID for this component instance to prevent context collisions
-const MiniConstellation = forwardRef<HTMLDivElement, MiniConstellationProps>(({ currentNodeId }, ref) => {
+const MiniConstellation = forwardRef<HTMLDivElement, Record<string, never>>((_props, ref) => {
   const dispatch = useDispatch();
   const nodes = useSelector(selectConstellationNodes);
+  const selectedNodeId = useSelector(selectSelectedNodeId);
   const connections = useSelector(selectConnections);
   const instancedMeshRef = useRef<InstancedMesh>(null!);
   const [isInteracting, setIsInteracting] = useState(false);
@@ -43,15 +42,17 @@ const MiniConstellation = forwardRef<HTMLDivElement, MiniConstellationProps>(({ 
   const mappedConnections = useMemo(() => connections.map(c => ({ source: c.start, target: c.end })), [connections]);
   const clickableNodeIds = useMemo(() => {
     const connectedIds = new Set<string>();
-    connections.forEach(conn => {
-      if (conn.start === currentNodeId) {
-        connectedIds.add(conn.end);
-      } else if (conn.end === currentNodeId) {
-        connectedIds.add(conn.start);
-      }
-    });
+    if (selectedNodeId) {
+      connections.forEach(conn => {
+        if (conn.start === selectedNodeId) {
+          connectedIds.add(conn.end);
+        } else if (conn.end === selectedNodeId) {
+          connectedIds.add(conn.start);
+        }
+      });
+    }
     return Array.from(connectedIds);
-  }, [connections, currentNodeId]);
+  }, [connections, selectedNodeId]);
 
   const handleNodeClick = (nodeId: string) => {
     dispatch(nodeSelected(nodeId));
@@ -170,18 +171,20 @@ const MiniConstellation = forwardRef<HTMLDivElement, MiniConstellationProps>(({ 
             nodes={nodes}
             nodePositions={nodePositions}
             connections={connections}
-            overrideSelectedNodeId={currentNodeId}
+            overrideSelectedNodeId={selectedNodeId ?? undefined}
             onNodeClick={handleNodeClick}
             clickableNodeIds={clickableNodeIds}
             isMinimap={true}
             isInitialChoicePhase={false}
             positionSynchronizer={positionSynchronizer}
           />
-          <ConnectionsBatched 
-            ref={instancedMeshRef} 
-            connections={mappedConnections} 
+          <ConnectionsBatched
+            connections={mappedConnections}
             nodePositions={nodePositions}
+            selectedNodeId={selectedNodeId}
+            hoveredNodeId={null}
             positionSynchronizer={positionSynchronizer}
+            isMinimap={true}
           />
         </group>
       </Canvas>

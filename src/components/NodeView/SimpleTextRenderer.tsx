@@ -179,32 +179,6 @@ const SimpleTextRenderer: React.FC<SimpleTextRendererProps> = memo(({
           console.log(`[SimpleTextRenderer] Explicitly marking content as visible`);
           onVisibilityChange(true);
         }
-        
-        // BUGFIX: Set up additional verification checks to ensure content stays visible
-        const verifyVisibilityIntervals = [100, 500, 1000];
-        verifyVisibilityIntervals.forEach(interval => {
-          setTimeout(() => {
-            if (contentRef.current) {
-              console.log(`[SimpleTextRenderer] Visibility verification check at ${interval}ms`);
-              
-              if (!contentRef.current.isConnected) {
-                console.warn(`[SimpleTextRenderer] Content DOM node not connected at ${interval}ms`);
-              }
-              
-              // Force visibility regardless of current state
-              if (contentRef.current.style) {
-                contentRef.current.style.display = 'block';
-                contentRef.current.style.visibility = 'visible';
-                contentRef.current.style.opacity = '1';
-              }
-              
-              // Reaffirm visibility to parent
-              if (onVisibilityChange) {
-                onVisibilityChange(true);
-              }
-            }
-          }, interval);
-        });
       } catch (error) {
         console.error(`[SimpleTextRenderer] Error processing content:`, error);
         // Still mark as not loading in case of error
@@ -212,10 +186,11 @@ const SimpleTextRenderer: React.FC<SimpleTextRendererProps> = memo(({
       }
     }
   }, [node?.currentContent, node?.id, originalTransformedContent, appliedTransformations, onRenderComplete, onVisibilityChange]);
-  
+
   // Set up visibility observer with simplified reliable detection
   useEffect(() => {
-    if (!contentRef.current) return;
+    const currentContentRef = contentRef.current;
+    if (!currentContentRef) return;
     
     console.log(`[DEBUG] Setting up IntersectionObserver for node: ${node?.id}, current visibility: ${isVisible}`);
     
@@ -245,8 +220,6 @@ const SimpleTextRenderer: React.FC<SimpleTextRendererProps> = memo(({
         
         console.log(`[DEBUG] Intersection detection for node ${node?.id}: ${isNowVisible ? 'visible' : 'not visible'}, intersectionRatio: ${entry.intersectionRatio.toFixed(2)}`);
         
-        // BUGFIX: Delay visibility changes to prevent flicker and
-        // only update if visibility changed to false (keep content visible)
         if (isVisible && !isNowVisible) {
           // Add delay before marking as invisible to prevent flicker
           console.log(`[DEBUG] Content might be invisible - delaying state change to verify...`);
@@ -282,20 +255,21 @@ const SimpleTextRenderer: React.FC<SimpleTextRendererProps> = memo(({
         threshold: 0.01 // Even 1% visibility is enough to consider it visible - more lenient
       }
     );
-    
+
     // Start observing
-    observerRef.current.observe(contentRef.current);
-    
+    observerRef.current.observe(currentContentRef);
+
     // Cleanup function
     return () => {
       console.log(`[DEBUG] Cleaning up IntersectionObserver for node: ${node?.id}`);
       observerRef.current?.disconnect();
     };
-  }, [isVisible, onVisibilityChange, node?.id]);
-  
+  }, [node?.id, isVisible, onVisibilityChange]);
+
   // Set up MutationObserver to prevent style changes that would hide content
   useEffect(() => {
-    if (!contentRef.current) return;
+    const currentContentRef = contentRef.current;
+    if (!currentContentRef) return;
     
     console.log(`[DEBUG] Setting up MutationObserver for node: ${node?.id}`);
     
@@ -326,17 +300,17 @@ const SimpleTextRenderer: React.FC<SimpleTextRendererProps> = memo(({
           // If any change would hide the content, force it back to visible
           if (computedStyle.display === 'none' ||
               computedStyle.visibility === 'hidden' ||
-              computedStyle.opacity === '0') {
+              parseFloat(computedStyle.opacity) === 0) {
             
             console.warn(`[DEBUG] Preventing content from being hidden by style mutation`);
             
             // Force visibility
             target.style.display = target.style.display === 'none' ? 'block' : target.style.display;
             target.style.visibility = target.style.visibility === 'hidden' ? 'visible' : target.style.visibility;
-            target.style.opacity = target.style.opacity === '0' ? '1' : target.style.opacity;
+            target.style.opacity = parseFloat(target.style.opacity) === 0 ? '1' : target.style.opacity;
             
             // Notify parent if this is the main content element
-            if (target === contentRef.current && onVisibilityChange) {
+            if (target === currentContentRef && onVisibilityChange) {
               console.log(`[DEBUG] Notifying parent that content is still visible after mutation`);
               onVisibilityChange(true);
             }
@@ -346,7 +320,7 @@ const SimpleTextRenderer: React.FC<SimpleTextRendererProps> = memo(({
     });
     
     // Observe the content element and its children
-    mutationObserverRef.current.observe(contentRef.current, {
+    mutationObserverRef.current.observe(currentContentRef, {
       attributes: true,
       attributeFilter: ['style', 'class'],
       childList: true,
@@ -354,12 +328,14 @@ const SimpleTextRenderer: React.FC<SimpleTextRendererProps> = memo(({
     });
     
     // Also observe the parent elements up to 3 levels
-    let parent = contentRef.current.parentElement;
+    let parent = currentContentRef.parentElement;
     for (let i = 0; i < 3 && parent; i++) {
-      mutationObserverRef.current.observe(parent, {
-        attributes: true,
-        attributeFilter: ['style', 'class'],
-      });
+      if (mutationObserverRef.current) {
+        mutationObserverRef.current.observe(parent, {
+          attributes: true,
+          attributeFilter: ['style', 'class'],
+        });
+      }
       parent = parent.parentElement;
     }
     

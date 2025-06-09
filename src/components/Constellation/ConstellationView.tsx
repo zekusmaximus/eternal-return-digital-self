@@ -1,6 +1,6 @@
 import { useSelector, useDispatch } from 'react-redux';
 import { selectConstellationNodes, selectConnections } from '../../store/slices/nodesSlice';
-import { setViewMode } from '../../store/slices/interfaceSlice';
+import { setViewMode, selectSelectedNodeId, selectHoveredNodeId } from '../../store/slices/interfaceSlice';
 import './ConstellationView.css';
 import { useMemo, useRef, lazy, Suspense, useState, useEffect, useCallback } from 'react';
 import { InstancedMesh } from 'three';
@@ -139,6 +139,8 @@ const ConstellationView = () => {
   const connections = useSelector(selectConnections);
   // Temporarily use a default value for isInitialChoicePhase to focus on connection alignment fix
   const isInitialChoicePhase = false;
+  const selectedNodeId = useSelector(selectSelectedNodeId);
+  const hoveredNodeId = useSelector(selectHoveredNodeId);
   const instancedMeshRef = useRef<InstancedMesh>(null!);
   const contextIdRef = useRef<string | null>(null);
   
@@ -299,6 +301,9 @@ const ConstellationView = () => {
             setWebGLError(error);
           }}
           positionSynchronizer={positionSynchronizer.current}
+          selectedNodeId={selectedNodeId}
+          hoveredNodeId={hoveredNodeId}
+          isMinimap={false}
         />
       </Suspense>
       
