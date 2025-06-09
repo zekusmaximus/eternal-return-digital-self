@@ -6,6 +6,7 @@ import {
   selectSelectedNodeId,
   nodeSelected,
   setViewMode,
+  setInitialChoicePhaseCompleted,
 } from '../../store/slices/interfaceSlice';
 import { navigateToNode } from '../../store/slices/readerSlice';
 import { visitNode } from '../../store/slices/nodesSlice';
@@ -15,6 +16,7 @@ import { forwardRef, useMemo, useRef, useEffect } from 'react';
 import { Color, InstancedMesh, ShaderMaterial, Frustum, Matrix4, Vector3 } from 'three';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
+import { Text } from '@react-three/drei';
 
 // Cached simple noise function implementation
 // Using a more optimized approach with pre-computed values
@@ -154,6 +156,7 @@ interface NodesInstancedProps {
   onNodeClick?: (nodeId: string) => void;
   clickableNodeIds?: string[];
   isMinimap?: boolean; // Flag to indicate if this is used in the minimap
+  isInitialChoicePhase: boolean;
 }
 
 // Define base colors for each triad - match exact character names from nodesSlice.ts
@@ -283,6 +286,7 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
     overrideSelectedNodeId,
     onNodeClick,
     clickableNodeIds,
+    isInitialChoicePhase,
   } = props;
   const dispatch = useDispatch<AppDispatch>();
   
@@ -442,10 +446,10 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
       lastUpdatePositionsTime.current = time;
       
       // Apply organic movement to nodes using noise - with optimized calculations
-      
+      // And apply pulsing effect for designated starting nodes
       for (let i = 0; i < nodes.length; i++) {
         const node = nodes[i];
-        const nodeMesh = nodeMeshRefs.current[i];
+        const nodeMesh = nodeMeshRefs.current[i] as THREE.Mesh; // Cast for scale property
         
         if (!nodeMesh) {
           continue; // Skip if mesh doesn't exist
@@ -454,6 +458,29 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
         const origPos = originalPositions.current[node.id];
         if (!origPos) {
           continue; // Skip if no original position
+        }
+
+        // Determine if this node is a designated starting node for pulsing logic
+        let isDesignatedStartingNodeForPulse = false;
+        if (isInitialChoicePhase && !props.isMinimap) { // Pulse only in main view during initial phase
+          if (node.contentSource === 'arch-discovery.md' ||
+              node.contentSource === 'algo-awakening.md' ||
+              node.contentSource === 'human-discovery.md') {
+            isDesignatedStartingNodeForPulse = true;
+          }
+        }
+
+        if (isDesignatedStartingNodeForPulse) {
+          const pulseSpeed = 3;
+          const pulseAmount = 0.15; // Scale pulsates between 0.85 and 1.15 approx.
+          const baseScale = 1.0;
+          const targetScale = baseScale + Math.sin(time * pulseSpeed) * pulseAmount;
+          nodeMesh.scale.set(targetScale, targetScale, targetScale);
+        } else {
+          // Ensure non-pulsing nodes (or minimap nodes, or when not in initial phase) have normal scale
+          if (nodeMesh.scale.x !== 1.0 || nodeMesh.scale.y !== 1.0 || nodeMesh.scale.z !== 1.0) {
+            nodeMesh.scale.set(1.0, 1.0, 1.0);
+          }
         }
         
         // Create a Vector3 for position (reused for visibility check)
@@ -573,6 +600,22 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
         const isSelected = selectedNodeId === node.id;
         const isConnected = connectedNodeIds.has(node.id);
         const isHovered = hoveredNodeId === node.id;
+
+        let isDesignatedStartingNode = false;
+        let labelText = '';
+
+        if (isInitialChoicePhase) {
+          if (node.contentSource === 'arch-discovery.md') {
+            isDesignatedStartingNode = true;
+            labelText = 'Choice';
+          } else if (node.contentSource === 'algo-awakening.md') {
+            isDesignatedStartingNode = true;
+            labelText = 'Awakening';
+          } else if (node.contentSource === 'human-discovery.md') {
+            isDesignatedStartingNode = true;
+            labelText = 'Discovery';
+          }
+        }
         
         // Calculate node color using our more permissive function
         const nodeColor = getNodeColor(node.character).clone();
@@ -584,10 +627,35 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
           nodeColor.multiplyScalar(0.5); // Darker shade
         } else if (isHovered) {
           nodeColor.multiplyScalar(1.2); // Slightly lighter for hover
+        } else if (isDesignatedStartingNode) {
+          // Potentially give starting nodes a distinct look even if not selected/hovered,
+          // or this could be handled by the pulsing effect later.
+          // For now, let's ensure they don't get dimmed like 'isConnected' if they are also connected.
+          // This logic might need refinement based on how visual effects are combined.
+          // If it's a starting node, we might want its base color to be more prominent.
+          // Example: nodeColor.multiplyScalar(1.1); // Slightly brighter if it's a starting node
         }
         
+        // The main node group's position is determined by nodePositions,
+        // but individual elements within this group (like the sphere and text) will be positioned relatively.
         return (
-          <group key={node.id}>
+          <group key={node.id} position={position}>
+            {isDesignatedStartingNode && isInitialChoicePhase && !props.isMinimap && labelText && (
+              <Text
+                position={[0, 0.8, 0]} // Position slightly above the node sphere
+                fontSize={0.35} // Slightly increased font size
+                color="white"
+                anchorX="center"
+                anchorY="middle"
+                outlineWidth={0.02}
+                outlineColor="#000000"
+                material-depthTest={false} // Ensures text is visible
+                material-transparent={true}
+              >
+                {labelText}
+              </Text>
+            )}
+
             {/* Force field effect (only visible when hovered or selected) */}
             {(isHovered || isSelected) && (
               <mesh
@@ -596,7 +664,8 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
                     forceFieldMeshRefs.current[index] = mesh;
                   }
                 }}
-                position={[position[0], position[1], position[2]]}>
+                // Position is now relative to the parent group, so [0,0,0] for the force field center
+                position={[0, 0, 0]}>
                 <sphereGeometry args={[0.7, 16, 16]} />
                 <shaderMaterial
                   ref={(material) => {
@@ -623,49 +692,66 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>(
                   nodeMeshRefs.current[index] = mesh;
                 }
               }}
-              position={[position[0], position[1], position[2]]}
+                // Position is now relative to the parent group, so [0,0,0] for the node sphere center
+                position={[0, 0, 0]}
               onClick={(e) => {
                 e.stopPropagation();
                 
                 // Emit custom event to hide tooltip when a node is clicked
                 const nodeUnhoverEvent = new CustomEvent('node-unhover');
                 window.dispatchEvent(nodeUnhoverEvent);
-                
-                if (onNodeClick) {
-                  if (clickableNodeIds && !clickableNodeIds.includes(node.id)) {
-                    return;
+
+                if (isInitialChoicePhase) {
+                  if (isDesignatedStartingNode) {
+                    dispatch(setInitialChoicePhaseCompleted());
+                    // Proceed with navigation for starting node
+                    dispatch(nodeSelected(node.id));
+                    dispatch(visitNode(node.id));
+                    dispatch(setViewMode('reading'));
+                    dispatch(navigateToNode({
+                      nodeId: node.id,
+                      character: node.character,
+                      temporalValue: node.temporalValue,
+                      attractors: node.strangeAttractors,
+                    }));
                   }
-                  onNodeClick(node.id);
+                  // If in initial choice phase but not a designated starting node, do nothing.
                 } else {
-                  if (selectedNodeId === null) {
-                    dispatch(nodeSelected(node.id));
-                    dispatch(visitNode(node.id));
-                    dispatch(setViewMode('reading')); // Set view mode to reading
-                    dispatch(navigateToNode({
-                      nodeId: node.id,
-                      character: node.character,
-                      temporalValue: node.temporalValue,
-                      attractors: node.strangeAttractors
-                    }));
-                    return;
-                  }
-                  
-                  const isConnected = connections.some(
-                    (c) =>
-                      (c.start === selectedNodeId && c.end === node.id) ||
-                      (c.start === node.id && c.end === selectedNodeId)
-                  );
-                  
-                  if (isConnected) {
-                    dispatch(nodeSelected(node.id));
-                    dispatch(visitNode(node.id));
-                    dispatch(setViewMode('reading')); // Set view mode to reading
-                    dispatch(navigateToNode({
-                      nodeId: node.id,
-                      character: node.character,
-                      temporalValue: node.temporalValue,
-                      attractors: node.strangeAttractors
-                    }));
+                  // Normal click logic (outside initial choice phase)
+                  if (onNodeClick) { // This path is typically for MiniConstellation
+                    if (clickableNodeIds && !clickableNodeIds.includes(node.id)) {
+                      return;
+                    }
+                    onNodeClick(node.id);
+                  } else { // This path is for the main ConstellationView
+                    if (selectedNodeId === null) { // If no node is selected, any node can be clicked
+                      dispatch(nodeSelected(node.id));
+                      dispatch(visitNode(node.id));
+                      dispatch(setViewMode('reading'));
+                      dispatch(navigateToNode({
+                        nodeId: node.id,
+                        character: node.character,
+                        temporalValue: node.temporalValue,
+                        attractors: node.strangeAttractors,
+                      }));
+                    } else { // If a node is already selected, only connected nodes can be clicked
+                      const isConnectedToCurrentSelected = connections.some(
+                        (c) =>
+                          (c.start === selectedNodeId && c.end === node.id) ||
+                          (c.start === node.id && c.end === selectedNodeId)
+                      );
+                      if (isConnectedToCurrentSelected) {
+                        dispatch(nodeSelected(node.id));
+                        dispatch(visitNode(node.id));
+                        dispatch(setViewMode('reading'));
+                        dispatch(navigateToNode({
+                          nodeId: node.id,
+                          character: node.character,
+                          temporalValue: node.temporalValue,
+                          attractors: node.strangeAttractors,
+                        }));
+                      }
+                    }
                   }
                 }
               }}
