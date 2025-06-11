@@ -23,6 +23,13 @@ import {
 import { ReaderState } from '../store/slices/readerSlice';
 import { pathAnalyzer } from './PathAnalyzer';
 import { CharacterBleedEffect } from './CharacterBleedService';
+// Import additional PathAnalyzer types for journey transformations
+import { 
+  ReadingPattern, 
+  RecursivePattern, 
+  CharacterFocusIntensity,
+  TemporalJumpingPattern
+} from './PathAnalyzer';
 
 // LRU Cache implementation for memoization
 class LRUCache<K, V> {
@@ -758,11 +765,6 @@ export class TransformationEngine {
   /**
    * Evaluates a transformation rule against the current reader and node state
    * Returns whether the transformation should be applied and the applicable transformations
-   * Utilizes caching for improved performance
-   */
-  /**
-   * Evaluates a transformation rule against the current reader and node state
-   * Returns whether the transformation should be applied and the applicable transformations
    * Enhanced with better caching for improved performance
    */
   evaluateTransformation(
@@ -810,8 +812,6 @@ export class TransformationEngine {
   }
   
   /**
-   * Applies a text transformation to the given content with caching
-   */  /**
    * Applies a text transformation to the given content with enhanced caching
    */
   applyTextTransformation(content: string, transformation: TextTransformation): string {
@@ -1089,8 +1089,6 @@ export class TransformationEngine {
   }
   
   /**
-   * Applies multiple transformations to content with enhanced caching
-   */  /**
    * Applies multiple transformations to content with enhanced caching and batching
    * for improved performance
    */
@@ -1288,8 +1286,7 @@ export class TransformationEngine {
   
   /**
    * Returns cache statistics for monitoring performance
-   */
-  /**
+   */  /**
    * Returns comprehensive cache statistics for monitoring performance
    */
   getCacheStats(): {
@@ -1317,6 +1314,465 @@ export class TransformationEngine {
           : 0
       }
     };
+  }
+
+  /**
+   * Applies journey-based transformations to content based on detected patterns from PathAnalyzer
+   * @param content The content to transform
+   * @param nodeState The current node state
+   * @param readerState The current reader state  
+   * @param patterns Array of reading patterns from PathAnalyzer
+   * @returns Array of TextTransformation objects for applying to content
+   */
+  applyJourneyTransformations(
+    content: string,
+    nodeState: NodeState,
+    readerState: ReaderState,
+    patterns: ReadingPattern[]
+  ): TextTransformation[] {
+    // Quick validation
+    if (!content || !patterns || patterns.length === 0) {
+      console.log('[TransformationEngine] applyJourneyTransformations: No patterns to apply');
+      return [];
+    }
+
+    try {
+      console.log(`[TransformationEngine] Applying journey transformations for ${patterns.length} patterns to node ${nodeState.id}`);
+
+      // Generate cache key for journey transformations
+      const journeyCacheKey = this.getJourneyCacheKey(content, nodeState, readerState, patterns);
+
+      // Check cache first  
+      const cachedResult = this.batchedTransformationCache.get(journeyCacheKey);
+      if (cachedResult !== undefined) {
+        this.stats.batchedCacheHits++;
+        console.log('[TransformationEngine] Journey transformations retrieved from cache');
+        return this.parseTransformationsFromCachedContent(cachedResult);
+      }
+
+      const transformations: TextTransformation[] = [];
+
+      // Process each pattern type and generate appropriate transformations
+      patterns.forEach((pattern, index) => {
+        console.log(`[TransformationEngine] Processing pattern ${index + 1}: ${pattern.type} (strength: ${pattern.strength})`);
+
+        switch (pattern.type) {
+          case 'sequence':
+            transformations.push(...this.createRecursiveSequenceTransformations(pattern, nodeState, readerState));
+            break;
+
+          case 'character':
+            transformations.push(...this.createCharacterFocusTransformations(pattern, nodeState, readerState));
+            break;
+
+          case 'temporal':
+            transformations.push(...this.createTemporalPatternTransformations(pattern, nodeState, readerState));
+            break;
+
+          case 'thematic':
+            transformations.push(...this.createThematicContinuityTransformations(pattern, nodeState, readerState));
+            break;
+
+          case 'rhythm':
+            // Rhythm patterns could add pacing-based transformations
+            transformations.push(...this.createRhythmPatternTransformations(pattern, nodeState, readerState));
+            break;
+
+          default:
+            console.warn(`[TransformationEngine] Unknown pattern type: ${pattern.type}`);
+        }
+      });
+
+      // Filter out invalid transformations and limit for performance
+      const validTransformations = transformations
+        .filter(t => t.selector && t.selector.length > 0)
+        .slice(0, 8); // Limit to prevent overwhelming content
+
+      // Cache the transformations by storing a reference string
+      const transformationsCacheData = JSON.stringify(validTransformations);
+      this.batchedTransformationCache.put(journeyCacheKey, transformationsCacheData);
+
+      console.log(`[TransformationEngine] Generated ${validTransformations.length} journey transformations`);
+
+      return validTransformations;
+
+    } catch (error) {
+      console.error('[TransformationEngine] Error in applyJourneyTransformations:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Generates a cache key specifically for journey transformations
+   */
+  private getJourneyCacheKey(
+    content: string,
+    nodeState: NodeState,
+    readerState: ReaderState,
+    patterns: ReadingPattern[]
+  ): string {
+    const contentHash = content.substring(0, 50);
+    const nodeKey = `${nodeState.id}:${nodeState.character}:${nodeState.visitCount}`;
+    
+    // Create pattern signature  
+    const patternSignature = patterns
+      .map(p => `${p.type}:${p.strength.toFixed(2)}:${(p.relatedNodes || []).length}`)
+      .join('|');
+
+    // Recent path for context
+    const recentPath = readerState.path.sequence.slice(-5).join('→');
+    
+    return `journey:${contentHash}:${nodeKey}:${recentPath}:${patternSignature}:${this.lastModificationTime}`;
+  }
+
+  /**
+   * Helper method to parse transformations from cached content
+   */
+  private parseTransformationsFromCachedContent(cachedData: string): TextTransformation[] {
+    try {
+      return JSON.parse(cachedData) as TextTransformation[];
+    } catch (error) {
+      console.warn('[TransformationEngine] Failed to parse cached transformations:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Creates transformations for recursive sequence patterns
+   * Generates meta-commentary about pattern recognition
+   */
+  private createRecursiveSequenceTransformations(
+    pattern: ReadingPattern,
+    nodeState: NodeState,
+    readerState: ReaderState
+  ): TextTransformation[] {
+    const transformations: TextTransformation[] = [];
+
+    // Get detailed recursive patterns for this analysis
+    const recursivePatterns: RecursivePattern[] = pathAnalyzer.analyzeRecursivePatterns(readerState, { [nodeState.id]: nodeState });
+    const strongPatterns = recursivePatterns.filter(p => p.strength >= 0.6);
+
+    if (strongPatterns.length > 0) {
+      // Add meta-commentary about pattern recognition
+      transformations.push({
+        type: 'metaComment',
+        selector: 'pattern',
+        replacement: `recursive navigation detected: ${strongPatterns[0].sequence.join('→')} (×${strongPatterns[0].occurrences})`,
+        commentStyle: 'marginalia',
+        intensity: Math.ceil(pattern.strength * 3),
+        priority: 'high'
+      });
+
+      // For very strong patterns, add fragmentation to show algorithmic recognition
+      if (pattern.strength > 0.8) {
+        transformations.push({
+          type: 'fragment',
+          selector: 'recognition',
+          fragmentPattern: '...',
+          fragmentStyle: 'progressive',
+          intensity: 2,
+          priority: 'medium'
+        });
+      }
+
+      // Emphasize repeated elements if this node is part of the pattern
+      if (strongPatterns.some(p => p.sequence.includes(nodeState.id))) {
+        transformations.push({
+          type: 'emphasize',
+          selector: 'loop',
+          emphasis: 'color',
+          intensity: 2,
+          priority: 'medium'
+        });
+      }
+    }
+
+    return transformations;
+  }
+
+  /**
+   * Creates transformations for character focus patterns
+   * Generates perspective bleeding effects  
+   */
+  private createCharacterFocusTransformations(
+    pattern: ReadingPattern,
+    nodeState: NodeState,
+    readerState: ReaderState
+  ): TextTransformation[] {
+    const transformations: TextTransformation[] = [];
+
+    // Get character focus intensity data
+    const characterIntensities: CharacterFocusIntensity[] = pathAnalyzer.calculateCharacterFocusIntensity(readerState, { [nodeState.id]: nodeState });
+    const focusedCharacters = characterIntensities.filter(ci => ci.intensity >= 0.4);
+
+    if (focusedCharacters.length > 0 && pattern.relatedCharacters) {
+      const dominantCharacter = focusedCharacters[0].character;
+      
+      // Create perspective bleeding effects
+      if (dominantCharacter !== nodeState.character) {
+        transformations.push({
+          type: 'metaComment',
+          selector: 'perspective',
+          replacement: `${dominantCharacter} perspective bleeding through (focus: ${Math.round(focusedCharacters[0].intensity * 100)}%)`,
+          commentStyle: 'interlinear',
+          intensity: Math.ceil(pattern.strength * 3),
+          priority: 'high'
+        });
+
+        // Add character-specific emphasis
+        transformations.push({
+          type: 'emphasize',
+          selector: 'I',
+          emphasis: 'glitch',
+          intensity: 2,
+          priority: 'medium'
+        });
+      }
+
+      // For high intensity focus, add perspective shift commentary
+      if (focusedCharacters[0].intensity > 0.7) {
+        transformations.push({
+          type: 'expand',
+          selector: 'thought',
+          replacement: `[${dominantCharacter} cognitive patterns emerging]`,
+          expandStyle: 'inline',
+          priority: 'low'
+        });
+      }
+    }
+
+    return transformations;
+  }
+
+  /**
+   * Creates transformations for temporal patterns
+   * Generates temporal displacement awareness effects
+   */
+  private createTemporalPatternTransformations(
+    pattern: ReadingPattern,
+    nodeState: NodeState,
+    readerState: ReaderState
+  ): TextTransformation[] {
+    const transformations: TextTransformation[] = [];
+
+    // Get temporal jumping patterns
+    const temporalJumping: TemporalJumpingPattern = pathAnalyzer.analyzeTemporalJumping(readerState, { [nodeState.id]: nodeState });
+    
+    if (temporalJumping.volatility > 0.5 || temporalJumping.jumpFrequency > 0.3) {
+      // Add temporal displacement awareness
+      transformations.push({
+        type: 'metaComment',
+        selector: 'time',
+        replacement: `temporal displacement detected: ${temporalJumping.totalJumps} jumps, ${temporalJumping.preferredJumpDirection} bias`,
+        commentStyle: 'footnote',
+        intensity: Math.ceil(pattern.strength * 3),
+        priority: 'high'
+      });
+
+      // For high volatility, fragment time-related words
+      if (temporalJumping.volatility > 0.7) {
+        transformations.push({
+          type: 'fragment',
+          selector: 'moment',
+          fragmentPattern: '≈',
+          fragmentStyle: 'character',
+          intensity: 3,
+          priority: 'medium'
+        });
+
+        transformations.push({
+          type: 'fragment',
+          selector: 'now',
+          fragmentPattern: '≈',
+          fragmentStyle: 'word',
+          intensity: 3,
+          priority: 'medium'
+        });
+      }      // Emphasize temporal anchoring if strong
+      const strongAnchor = Object.entries(temporalJumping.temporalAnchoring)
+        .find(([, value]) => value > 0.6);
+      
+      if (strongAnchor) {
+        transformations.push({
+          type: 'emphasize',
+          selector: strongAnchor[0],
+          emphasis: 'highlight',
+          intensity: 2,
+          priority: 'medium'
+        });
+      }
+    }
+
+    return transformations;
+  }
+
+  /**
+   * Creates transformations for thematic continuity patterns  
+   * Generates strange attractor resonance effects
+   */
+  private createThematicContinuityTransformations(
+    pattern: ReadingPattern,
+    nodeState: NodeState,
+    readerState: ReaderState
+  ): TextTransformation[] {
+    const transformations: TextTransformation[] = [];
+
+    if (pattern.relatedAttractors && pattern.relatedAttractors.length > 0) {
+      // Get attractor engagement levels
+      const attractorEngagements = pathAnalyzer.calculateAttractorEngagement(readerState, { [nodeState.id]: nodeState });
+      
+      pattern.relatedAttractors.forEach(attractor => {
+        const engagement = attractorEngagements.find(e => e.attractor === attractor);
+        
+        if (engagement && engagement.engagementScore >= 50) {
+          // Create resonance effects based on engagement
+          transformations.push({
+            type: 'metaComment',
+            selector: attractor.replace('-', ' '),
+            replacement: `strange attractor resonance: ${engagement.engagementScore}/100 (${engagement.trend})`,
+            commentStyle: 'marginalia',
+            intensity: Math.ceil(pattern.strength * 3),
+            priority: 'high'
+          });
+
+          // For strong engagement, emphasize attractor concepts
+          if (engagement.engagementScore > 75) {
+            transformations.push({
+              type: 'emphasize',
+              selector: attractor.replace('-', ' '),
+              emphasis: 'color',
+              intensity: 3,
+              priority: 'medium'
+            });
+          }
+
+          // For trending attractors, add expansion
+          if (engagement.trend === 'rising') {
+            transformations.push({
+              type: 'expand',
+              selector: attractor.replace('-', ' '),
+              replacement: `[amplifying]`,
+              expandStyle: 'inline',
+              priority: 'low'
+            });
+          }
+        }
+      });
+
+      // Check for thematic continuity across recent visits
+      const recentVisits = readerState.path.detailedVisits?.slice(-5) || [];
+      const attractorContinuity = this.calculateAttractorContinuity(recentVisits, nodeState);
+      
+      if (attractorContinuity > 0.6) {
+        transformations.push({
+          type: 'replace',
+          selector: 'connection',
+          replacement: 'strange attractor web',
+          preserveFormatting: true,
+          priority: 'medium'
+        });
+      }
+    }
+
+    return transformations;
+  }
+  /**
+   * Creates transformations for rhythm patterns
+   * Generates narrative pacing effects
+   */
+  private createRhythmPatternTransformations(
+    _pattern: ReadingPattern, // Marked as unused but kept for API consistency
+    nodeState: NodeState,
+    readerState: ReaderState
+  ): TextTransformation[] {
+    const transformations: TextTransformation[] = [];
+
+    // Analyze journey fingerprint for rhythm patterns
+    const fingerprint = pathAnalyzer.generateJourneyFingerprint(readerState, { [nodeState.id]: nodeState });
+
+    // Based on exploration style, add appropriate rhythm effects
+    switch (fingerprint.explorationStyle) {
+      case 'linear':
+        transformations.push({
+          type: 'metaComment',
+          selector: 'sequence',
+          replacement: 'linear progression detected',
+          commentStyle: 'inline',
+          intensity: 1,
+          priority: 'low'
+        });
+        break;
+
+      case 'recursive':
+        transformations.push({
+          type: 'emphasize',
+          selector: 'return',
+          emphasis: 'spacing',
+          intensity: 2,
+          priority: 'medium'
+        });
+        break;
+
+      case 'wandering':
+        transformations.push({
+          type: 'fragment',
+          selector: 'direction',
+          fragmentPattern: '~',
+          fragmentStyle: 'word',
+          intensity: 1,
+          priority: 'low'
+        });
+        break;
+
+      case 'chaotic':
+        transformations.push({
+          type: 'fragment',
+          selector: 'order',
+          fragmentPattern: '!',
+          fragmentStyle: 'progressive',
+          intensity: 3,
+          priority: 'medium'
+        });
+        break;
+    }
+
+    // Add velocity-based effects
+    if (fingerprint.velocityIndex > 0.7) {
+      transformations.push({
+        type: 'emphasize',
+        selector: 'pace',
+        emphasis: 'bold',
+        intensity: 2,
+        priority: 'medium'
+      });
+    }
+
+    return transformations;
+  }
+  /**
+   * Helper method to calculate attractor continuity across recent visits
+   */
+  private calculateAttractorContinuity(recentVisits: Array<{ engagedAttractors?: StrangeAttractor[] }>, currentNode: NodeState): number {
+    if (recentVisits.length < 2) return 0;
+
+    const currentAttractors = currentNode.strangeAttractors || [];
+    if (currentAttractors.length === 0) return 0;
+
+    let continuityScore = 0;
+    let totalComparisons = 0;    // Compare with each recent visit
+    recentVisits.forEach(visit => {
+      if (visit.engagedAttractors && visit.engagedAttractors.length > 0) {
+        const visitAttractors = visit.engagedAttractors;
+        const sharedAttractors = currentAttractors.filter(attractor => 
+          visitAttractors.includes(attractor)
+        );
+        
+        continuityScore += sharedAttractors.length / Math.max(currentAttractors.length, visitAttractors.length);
+        totalComparisons++;
+      }
+    });
+
+    return totalComparisons > 0 ? continuityScore / totalComparisons : 0;
   }
 }
 
