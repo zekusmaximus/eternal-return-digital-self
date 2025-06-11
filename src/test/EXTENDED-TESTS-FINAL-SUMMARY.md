@@ -45,8 +45,7 @@
 ### 📁 Files Created
 
 **Test Files:**
-- ✅ `src/test/TransformationEngine.extended.fixed.test.ts` (489 lines) - **WORKING**
-- ✅ `src/test/TransformationEngine.extended.jest.test.ts` (574 lines) - Jest-compatible
+- ✅ `test-master-transformation-integration.js` - **WORKING** - Main integration test
 - ✅ `src/test/run-extended-tests.js` - Simple test runner
 
 **Documentation:**
@@ -97,7 +96,7 @@
 cd "c:\Users\zeke\Desktop\Projects\eternal-return-digital-self"
 
 # Run the comprehensive test suite
-npx tsx src/test/TransformationEngine.extended.fixed.test.ts
+node test-master-transformation-integration.js
 ```
 
 ### Integration in Your Code
@@ -196,4 +195,4 @@ All goals have been achieved:
 
 *Implementation completed successfully on June 11, 2025* 🎉
 
-**Test Command:** `npx tsx src/test/TransformationEngine.extended.fixed.test.ts`
+**Test Command:** `node test-master-transformation-integration.js`

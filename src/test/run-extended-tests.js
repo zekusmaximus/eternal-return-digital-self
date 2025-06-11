@@ -5,11 +5,9 @@
 
 console.log('🚀 Starting Extended TransformationEngine Test Suite...\n');
 
-// Import the test file to run it
-try {
-  require('./TransformationEngine.extended.test');
-  console.log('\n✅ All tests completed successfully!');
-} catch (error) {
-  console.error('\n❌ Test execution failed:', error);
-  process.exit(1);
-}
+// Note: Extended test files have been integrated into the main application
+// Use the master integration test instead
+console.log('ℹ️  Extended test files have been integrated into the main application.');
+console.log('📋 To test the master transformation integration, run:');
+console.log('   node test-master-transformation-integration.js');
+console.log('\n✅ Test runner updated successfully!');

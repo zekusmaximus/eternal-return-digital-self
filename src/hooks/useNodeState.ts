@@ -120,34 +120,37 @@ export const useNodeState = (nodeId?: string) => {
     // This automatically handles character bleed, journey patterns, and node rules
     // with proper priority ordering, deduplication, and caching
     try {
-      const allNodeStates = {}; // Could be passed from parent component if available
+      // Pass all nodes from Redux store for better context
       const transformations = transformationEngine.calculateAllTransformations(
         node.currentContent,
         node,
         readerState,
-        allNodeStates
+        allNodes
       );
       
-      console.log(`[useNodeState] Master transformation integration calculated ${transformations.length} transformations for node ${node.id}`);
+      console.log(`[useNodeState] Master transformation integration calculated ${transformations.length} transformations for node ${node.id}:`, {
+        characterBleed: transformations.filter(t => t.priority === 'high' && (t.type === 'emphasize' || t.type === 'fragment')).length,
+        journeyPatterns: transformations.filter(t => t.priority === 'high' && t.type !== 'emphasize' && t.type !== 'fragment').length,
+        nodeRules: transformations.filter(t => t.priority !== 'high').length,
+        totalTransformations: transformations.length
+      });
       return transformations;
       
     } catch (error) {
       console.error(`[useNodeState] Error in master transformation calculation for node ${node.id}:`, error);
       return [];
     }
-  }, [node, readerState]);
-  // Generate transformed content using the new master integration method
+  }, [node, readerState, allNodes]);  // Generate transformed content using the new master integration method
   const transformedContent = useMemo(() => {
     if (!node?.currentContent) return node?.currentContent || null;
 
     try {
       // Use the new master getTransformedContent method
       // This automatically handles all transformation coordination, caching, and content application
-      const allNodeStates = {}; // Could be passed from parent component if available
       const fullyTransformedContent = transformationEngine.getTransformedContent(
         node,
         readerState,
-        allNodeStates
+        allNodes
       );
 
       // Add wrapper elements with transition classes if transformations were applied
@@ -156,6 +159,14 @@ export const useNodeState = (nodeId?: string) => {
           fullyTransformedContent,
           allTransformations
         );
+        
+        console.log(`[useNodeState] Applied transformation wrapping for node ${node.id}:`, {
+          originalLength: node.currentContent.length,
+          transformedLength: fullyTransformedContent.length,
+          wrappedLength: wrappedContent.length,
+          transformationsCount: allTransformations.length
+        });
+        
         return wrappedContent;
       }
 
@@ -165,9 +176,7 @@ export const useNodeState = (nodeId?: string) => {
       console.error(`[useNodeState] Error in master content transformation for node ${node.id}:`, error);
       return node?.currentContent || null;
     }
-  }, [node, readerState, allTransformations]);
-
-  // Track transformation changes in a separate effect to prevent infinite loops
+  }, [node, readerState, allNodes, allTransformations]);  // Track transformation changes in a separate effect to prevent infinite loops
   useEffect(() => {
     if (!node || allTransformations.length === 0) return;
 
@@ -178,16 +187,36 @@ export const useNodeState = (nodeId?: string) => {
       setAppliedTransformations(allTransformations);
       setNewlyTransformed(true);
 
-      // Log transformation details for debugging
+      // Enhanced logging for debugging the master integration
       if (process.env.NODE_ENV === 'development') {
-        const journeyTransformations = allTransformations.filter(t => t.priority === 'high');
-        console.log(`[useNodeState] Applied transformations for node ${node.id}:`, {
-          journeyTransformations: journeyTransformations.length,
-          patternTransformations: allTransformations.filter(t => t.priority !== 'high' && !node.transformations.some(rule => rule.transformations.includes(t))).length,
-          ruleTransformations: allTransformations.filter(t => t.priority !== 'high' && node.transformations.some(rule => rule.transformations.includes(t))).length,
+        const characterBleedTransformations = allTransformations.filter(t => 
+          t.priority === 'high' && (t.type === 'emphasize' || t.type === 'fragment')
+        );
+        const journeyPatternTransformations = allTransformations.filter(t => 
+          t.priority === 'high' && t.type !== 'emphasize' && t.type !== 'fragment'
+        );
+        const nodeRuleTransformations = allTransformations.filter(t => 
+          t.priority !== 'high'
+        );
+        
+        console.log(`[useNodeState] Applied master transformations for node ${node.id}:`, {
+          characterBleed: {
+            count: characterBleedTransformations.length,
+            types: characterBleedTransformations.map(t => t.type),
+            selectors: characterBleedTransformations.map(t => t.selector?.substring(0, 20)).filter(Boolean)
+          },
+          journeyPatterns: {
+            count: journeyPatternTransformations.length,
+            types: journeyPatternTransformations.map(t => t.type)
+          },
+          nodeRules: {
+            count: nodeRuleTransformations.length,
+            types: nodeRuleTransformations.map(t => t.type)
+          },
           totalTransformations: allTransformations.length,
-          hasCharacterBleed: journeyTransformations.some(t => t.type === 'emphasize' || t.type === 'fragment'),
-          journeyContext: node.journeyContext
+          journeyContext: node.journeyContext,
+          character: node.character,
+          visitCount: node.visitCount
         });
       }
     }
@@ -202,7 +231,7 @@ export const useNodeState = (nodeId?: string) => {
       
       return () => clearTimeout(timer);
     }
-  }, [newlyTransformed]);  // Apply transformations based on visit count and reader patterns - CRITICAL FIX to prevent infinite loops
+  }, [newlyTransformed]);  // Enhanced transformation application with master integration support
   useEffect(() => {
     if (!node || !targetNodeId) return;
     
@@ -220,83 +249,78 @@ export const useNodeState = (nodeId?: string) => {
       node.currentContent.includes('recursive loop detected') ||
       node.currentContent.includes('temporal displacement')
     )) {
-      console.log(`[useNodeState] Content already transformed for node ${targetNodeId}, skipping to prevent infinite loop`);
+      console.log(`[useNodeState] Content already transformed for node ${targetNodeId}, skipping legacy transformation dispatch`);
       return;
     }
     
     // Create a unique key based on ONLY the navigation state, not content changes
-    // This prevents re-triggering when transformations modify the content
     const nodeKey = `${targetNodeId}-${node.visitCount}`;
     
     // Check if we've already applied transformations for this exact combination
     if (appliedNodesRef.current.has(nodeKey)) {
-      console.log(`[useNodeState] Skipping already applied transformations for ${nodeKey}`);
+      console.log(`[useNodeState] Skipping already applied legacy transformations for ${nodeKey}`);
       return;
-    }    // Only apply transformations when the node actually changes, not when reader state changes
-    console.log(`[useNodeState] Applying transformations for node ${targetNodeId} (visitCount: ${node.visitCount})`);
+    }
+
+    // Only apply legacy transformations when the node actually changes
+    console.log(`[useNodeState] Applying legacy transformation dispatch for node ${targetNodeId} (visitCount: ${node.visitCount})`);
     
     // Update the last dispatch timestamp BEFORE dispatching
     lastTransformationDispatchRef.current = now;
     
-    // Mark this node+visit combination as processed BEFORE dispatching to prevent race conditions
+    // Mark this node+visit combination as processed BEFORE dispatching
     appliedNodesRef.current.add(nodeKey);
     
-    // Cleanup old entries to prevent memory leaks (keep only last 50 entries)
+    // Cleanup old entries to prevent memory leaks
     if (appliedNodesRef.current.size > 50) {
       const entries = Array.from(appliedNodesRef.current);
-      const toKeep = entries.slice(-25); // Keep last 25 entries
+      const toKeep = entries.slice(-25);
       appliedNodesRef.current.clear();
       toKeep.forEach(key => appliedNodesRef.current.add(key));
     }
 
-    // Apply journey transformations (character bleed + journey context) - but only once per node
+    // Apply journey transformations (for backward compatibility with Redux store)
+    // Note: The master integration handles this automatically, but we keep this for store consistency
     dispatch(applyJourneyTransformations({
       nodeId: targetNodeId,
       readerState
     }));
 
-    // Generate default transformations based on visit count
+    // Apply basic visit-based transformations for backward compatibility
     if (node.visitCount === 1) {
       const basicTransformation: TransformationRule = {
-        condition: {
-          visitCount: 1
-        },
-        transformations: [
-          {
-            type: 'emphasize',
-            selector: 'first-paragraph',
-            emphasis: 'italic'
-          }
-        ]
+        condition: { visitCount: 1 },
+        transformations: [{
+          type: 'emphasize',
+          selector: 'first-paragraph',
+          emphasis: 'italic'
+        }]
       };
-      
       applyNodeTransformation(targetNodeId, basicTransformation);
     }
 
-    // Generate pattern-based transformations (with reduced frequency to prevent loops)
-    if (node.visitCount >= 2 && node.visitCount <= 5) { // Limit pattern generation to early visits
+    // Generate reduced pattern-based transformations to complement master integration
+    if (node.visitCount >= 2 && node.visitCount <= 3) {
       const patternTransformations = transformationService.createTransformationsFromPatterns(
         readerState,
         node
       );
       
-      // Apply these transformations only if they're not too many
-      if (patternTransformations.length > 0 && patternTransformations.length <= 3) {
+      if (patternTransformations.length > 0 && patternTransformations.length <= 2) {
         const patternBasedRule: TransformationRule = {
           condition: { visitCount: node.visitCount },
-          transformations: patternTransformations
+          transformations: patternTransformations.slice(0, 1) // Limit to 1 to avoid conflicts with master integration
         };
-        
         applyNodeTransformation(targetNodeId, patternBasedRule);
       }
     }
 
-    // Evaluate transformations against current reader state (with throttling)
+    // Evaluate transformations against current reader state
     dispatch(evaluateTransformations({
       nodeId: targetNodeId,
       readerState
     }));
-  }, [targetNodeId, node, dispatch, applyNodeTransformation, readerState]); // Fixed dependencies  // TEMPORARILY DISABLED: Update content variants when reader state changes
+  }, [targetNodeId, node, dispatch, applyNodeTransformation, readerState]);// TEMPORARILY DISABLED: Update content variants when reader state changes
   // This effect was causing content to disappear due to re-selection loops
   // TODO: Re-enable with proper dependency management
   /*

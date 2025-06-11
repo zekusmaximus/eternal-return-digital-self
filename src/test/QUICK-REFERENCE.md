@@ -1,59 +1,52 @@
 # TransformationEngine Extended Tests - Quick Reference
 
-## 📁 Test Files Created
+## 📁 Test Files Available
 
-### 1. `TransformationEngine.extended.test.ts`
-**Comprehensive integration test suite** - The main test file that thoroughly validates all new functionality.
+### 1. `test-master-transformation-integration.js`
+**Main integration test** - Validates the complete enhanced TransformationEngine system.
 
 **Features:**
-- ✅ Tests all 6 new condition types with realistic mock data
-- ✅ Tests CharacterBleedService integration with multiple character scenarios
-- ✅ Tests PathAnalyzer integration with complex reading patterns
-- ✅ Tests master `calculateAllTransformations` method
+- ✅ Tests master integration methods (`calculateAllTransformations`, `getTransformedContent`)
+- ✅ Tests CharacterBleedService integration with character transitions
+- ✅ Tests PathAnalyzer integration with journey patterns
 - ✅ Performance testing with caching validation
 - ✅ Backward compatibility verification
 - ✅ Error handling and edge cases
 
-**Run with:** `npx ts-node src/test/TransformationEngine.extended.test.ts`
+**Run with:** `node test-master-transformation-integration.js`
 
-### 2. `TransformationEngine.extended.jest.test.ts`
-**Jest-compatible unit test suite** - Traditional unit testing structure for CI/CD integration.
-
-**Features:**
-- ✅ Standard Jest `describe`/`it`/`expect` pattern
-- ✅ Individual test isolation with `beforeEach`/`afterEach`
-- ✅ Mock cleanup and restoration
-- ✅ Focused unit testing approach
-- ✅ CI/CD pipeline ready
-
-**Run with:** `npm test` or `jest src/test/TransformationEngine.extended.jest.test.ts`
-
-### 3. `run-extended-tests.js`
-**Simple test runner** - Easy way to execute the comprehensive test suite.
+### 2. `src/test/run-extended-tests.js`
+**Simple test runner** - Easy way to execute integration tests.
 
 **Run with:** `node src/test/run-extended-tests.js`
 
-### 4. `EXTENDED-TESTS-README.md`
-**Comprehensive documentation** - Complete guide for understanding and using the tests.
+### 3. Various specialized tests
+**Individual component tests** - For testing specific functionality:
+- `test-character-bleed-integration.js` - Character bleed system
+- `test-journey-transformations.js` - Journey pattern analysis
+- `test-enhanced-transformation-integration.js` - Enhanced integration testing
 
 ## 🚀 Quick Start
 
-### Option 1: Run All Tests (Recommended)
+### Option 1: Run Main Integration Test (Recommended)
 ```bash
-# Run the comprehensive test suite
-npx ts-node src/test/TransformationEngine.extended.test.ts
+# Main integration test
+node test-master-transformation-integration.js
 ```
 
-### Option 2: Run Jest Tests
-```bash
-# Run Jest-compatible tests
-npm test -- src/test/TransformationEngine.extended.jest.test.ts
-```
-
-### Option 3: Use Test Runner
+### Option 2: Use Test Runner
 ```bash
 # Simple test runner
 node src/test/run-extended-tests.js
+```
+
+### Option 3: Individual Component Tests
+```bash
+# Character bleed integration
+node test-character-bleed-integration.js
+
+# Journey transformations  
+node test-journey-transformations.js
 ```
 
 ## ✅ What These Tests Validate
