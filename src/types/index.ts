@@ -162,6 +162,16 @@ export interface NarramorphContent {
   [visitCount: number]: string;
 }
 
+/**
+ * Journey context tracking for character bleed and navigation pattern effects
+ */
+export interface JourneyContext {
+  lastVisitedCharacter?: Character; // Character from previous node visit
+  journeyPattern: string[]; // Recent navigation sequence (node IDs)
+  recursiveAwareness: number; // Recursive pattern intensity (0-1)
+  temporalDisplacement: boolean; // Cross-temporal character awareness flag
+}
+
 export interface NodeState extends Node {
   visitCount: number;
   currentState: NodeVisualState;
@@ -169,6 +179,7 @@ export interface NodeState extends Node {
   transformations: TransformationRule[]; // Applied transformations
   content: NarramorphContent | null; // Holds all content versions
   currentContent: string | null; // The currently displayed content
+  journeyContext?: JourneyContext; // Optional journey context for character bleed effects
 }
 
 /**
