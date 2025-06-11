@@ -22,7 +22,7 @@ import {
 } from '../types';
 import { ReaderState } from '../store/slices/readerSlice';
 import { pathAnalyzer } from './PathAnalyzer';
-import { CharacterBleedEffect } from './CharacterBleedService';
+import { CharacterBleedService, CharacterBleedEffect } from './CharacterBleedService';
 // Import additional PathAnalyzer types for journey transformations
 import { 
   ReadingPattern, 
@@ -1426,18 +1426,6 @@ export class TransformationEngine {
   }
 
   /**
-   * Helper method to parse transformations from cached content
-   */
-  private parseTransformationsFromCachedContent(cachedData: string): TextTransformation[] {
-    try {
-      return JSON.parse(cachedData) as TextTransformation[];
-    } catch (error) {
-      console.warn('[TransformationEngine] Failed to parse cached transformations:', error);
-      return [];
-    }
-  }
-
-  /**
    * Creates transformations for recursive sequence patterns
    * Generates meta-commentary about pattern recognition
    */
@@ -1773,6 +1761,271 @@ export class TransformationEngine {
     });
 
     return totalComparisons > 0 ? continuityScore / totalComparisons : 0;
+  }
+
+  /**
+   * Master integration method that coordinates all transformation systems
+   * Provides a single entry point for comprehensive content transformation
+   * 
+   * @param content The original content to transform
+   * @param nodeState The current node state
+   * @param readerState The current reader state
+   * @param allNodes All node states for context
+   * @returns Fully transformed content with all effects applied
+   */
+  calculateAllTransformations(
+    content: string,
+    nodeState: NodeState,
+    readerState: ReaderState,
+    allNodes: Record<string, NodeState> = {}
+  ): TextTransformation[] {
+    // Quick validation and early returns
+    if (!content || !nodeState || !readerState) {
+      console.warn('[TransformationEngine] calculateAllTransformations: Missing required parameters');
+      return [];
+    }
+
+    // Prevent infinite loops by checking if content is already heavily transformed
+    if (content.includes('data-transform-type') && content.length > 15000) {
+      console.warn('[TransformationEngine] Content appears heavily transformed, skipping to prevent infinite loop');
+      return [];
+    }
+
+    try {
+      console.log(`[TransformationEngine] Calculating all transformations for node ${nodeState.id}`);
+
+      // Generate comprehensive cache key for the entire transformation pipeline
+      const masterCacheKey = this.getMasterTransformationCacheKey(content, nodeState, readerState);
+
+      // Check master cache first
+      const cachedResult = this.batchedTransformationCache.get(masterCacheKey);
+      if (cachedResult !== undefined) {
+        this.stats.batchedCacheHits++;
+        console.log('[TransformationEngine] All transformations retrieved from master cache');
+        return this.parseTransformationsFromCachedContent(cachedResult);
+      }
+
+      const allTransformations: TextTransformation[] = [];
+
+      // STEP 1: Character Bleed Transformations (Highest Priority)
+      // These should be applied first as they affect how subsequent content is interpreted
+      console.log('[TransformationEngine] Step 1: Calculating character bleed transformations');
+      const characterBleedEffects = CharacterBleedService.calculateBleedEffects(nodeState, readerState);
+      
+      if (characterBleedEffects.length > 0) {        // Convert character bleed effects to TextTransformations with high priority
+        const characterBleedTransformations: TextTransformation[] = characterBleedEffects.map((effect: CharacterBleedEffect) => ({
+          ...effect.transformation,
+          priority: 'high' as const,
+          applyImmediately: true
+        }));
+        
+        allTransformations.push(...characterBleedTransformations.slice(0, 3)); // Limit for performance
+        console.log(`[TransformationEngine] Added ${Math.min(characterBleedTransformations.length, 3)} character bleed transformations`);
+      }
+
+      // STEP 2: Journey Pattern Transformations (High Priority)
+      // These respond to navigation patterns and reading behavior
+      console.log('[TransformationEngine] Step 2: Calculating journey pattern transformations');
+      const patterns = pathAnalyzer.analyzePathPatterns(readerState, allNodes);
+      
+      if (patterns.length > 0) {
+        const journeyTransformations = this.applyJourneyTransformations(content, nodeState, readerState, patterns);
+        
+        // Ensure journey transformations have high priority but lower than character bleed
+        const prioritizedJourneyTransformations = journeyTransformations.map(t => ({
+          ...t,
+          priority: 'high' as const
+        }));
+        
+        allTransformations.push(...prioritizedJourneyTransformations.slice(0, 4)); // Limit for performance
+        console.log(`[TransformationEngine] Added ${Math.min(prioritizedJourneyTransformations.length, 4)} journey pattern transformations`);
+      }
+
+      // STEP 3: Node-Specific Transformation Rules (Medium Priority)
+      // These are transformations specific to the current node's conditions
+      console.log('[TransformationEngine] Step 3: Evaluating node-specific transformation rules');
+      const nodeTransformations = this.evaluateAllTransformations(nodeState.transformations || [], readerState, nodeState);
+      
+      if (nodeTransformations.length > 0) {
+        const prioritizedNodeTransformations = nodeTransformations.map(t => ({
+          ...t,
+          priority: t.priority || 'medium' as const
+        }));
+        
+        allTransformations.push(...prioritizedNodeTransformations.slice(0, 3)); // Limit for performance
+        console.log(`[TransformationEngine] Added ${Math.min(prioritizedNodeTransformations.length, 3)} node-specific transformations`);
+      }
+
+      // STEP 4: Apply priority-based sorting to ensure correct application order
+      const sortedTransformations = this.sortTransformationsByPriority(allTransformations);
+
+      // STEP 5: Apply deduplication to prevent redundant transformations
+      const deduplicatedTransformations = this.deduplicateTransformations(sortedTransformations);
+
+      // Cache the final result
+      const transformationsCacheData = JSON.stringify(deduplicatedTransformations);
+      this.batchedTransformationCache.put(masterCacheKey, transformationsCacheData);
+
+      console.log(`[TransformationEngine] Master transformation calculation complete:`, {
+        characterBleed: characterBleedEffects.length,
+        journeyPatterns: patterns.length,
+        nodeRules: nodeState.transformations?.length || 0,
+        totalTransformations: deduplicatedTransformations.length,
+        cacheKey: masterCacheKey.substring(0, 50) + '...'
+      });
+
+      return deduplicatedTransformations;
+
+    } catch (error) {
+      console.error('[TransformationEngine] Error in calculateAllTransformations:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Single entry point for getting fully transformed content
+   * Combines calculateAllTransformations with content application
+   * 
+   * @param nodeState The current node state  
+   * @param readerState The current reader state
+   * @param allNodes All node states for context (optional)
+   * @returns Fully transformed content ready for display
+   */
+  getTransformedContent(
+    nodeState: NodeState,
+    readerState: ReaderState,
+    allNodes: Record<string, NodeState> = {}
+  ): string {
+    // Get the base content
+    const baseContent = nodeState.currentContent || nodeState.enhancedContent?.base || '';
+    
+    if (!baseContent) {
+      console.warn(`[TransformationEngine] No content available for node ${nodeState.id}`);
+      return '';
+    }
+
+    try {
+      // Calculate all transformations using the master method
+      const allTransformations = this.calculateAllTransformations(baseContent, nodeState, readerState, allNodes);
+
+      // Apply transformations in the correct order
+      const transformedContent = this.applyTransformations(baseContent, allTransformations);
+
+      console.log(`[TransformationEngine] Content transformation complete for node ${nodeState.id}:`, {
+        originalLength: baseContent.length,
+        transformedLength: transformedContent.length,
+        transformationsApplied: allTransformations.length
+      });
+
+      return transformedContent;
+
+    } catch (error) {
+      console.error(`[TransformationEngine] Error in getTransformedContent for node ${nodeState.id}:`, error);
+      return baseContent; // Return original content on error
+    }
+  }
+
+  /**
+   * Generates a master cache key for the entire transformation pipeline
+   * @param content The content being transformed
+   * @param nodeState The current node state
+   * @param readerState The current reader state
+   * @returns Cache key string
+   */
+  private getMasterTransformationCacheKey(
+    content: string,
+    nodeState: NodeState,
+    readerState: ReaderState
+  ): string {
+    // Create compact representation of key state
+    const contentHash = content.substring(0, 30);
+    const nodeKey = `${nodeState.id}:${nodeState.character}:${nodeState.visitCount}`;
+    
+    // Reader state essentials
+    const pathSignature = readerState.path.sequence.slice(-5).join('→');
+    const attractorSignature = Object.keys(readerState.path.attractorsEngaged || {}).slice(0, 3).join(',');
+    
+    // Character transition context
+    const detailedVisits = readerState.path.detailedVisits || [];
+    const lastCharacter = detailedVisits.length >= 2 
+      ? detailedVisits[detailedVisits.length - 2].character 
+      : 'none';
+    const characterTransition = `${lastCharacter}→${nodeState.character}`;
+
+    return `master:${contentHash}:${nodeKey}:${pathSignature}:${attractorSignature}:${characterTransition}:${this.lastModificationTime}`;
+  }
+
+  /**
+   * Sorts transformations by priority to ensure correct application order
+   * @param transformations Array of transformations to sort
+   * @returns Sorted transformations array
+   */
+  private sortTransformationsByPriority(transformations: TextTransformation[]): TextTransformation[] {
+    const getPriorityValue = (priority?: string): number => {
+      switch (priority) {
+        case 'high': return 3;
+        case 'medium': return 2;
+        case 'low': return 1;
+        default: return 0;
+      }
+    };
+
+    return [...transformations].sort((a, b) => {
+      // First sort by priority
+      const priorityDiff = getPriorityValue(b.priority) - getPriorityValue(a.priority);
+      if (priorityDiff !== 0) return priorityDiff;
+
+      // Then by applyImmediately flag
+      if (a.applyImmediately && !b.applyImmediately) return -1;
+      if (!a.applyImmediately && b.applyImmediately) return 1;
+
+      // Finally by transformation type (replace and fragment first for better visual flow)
+      const typeOrder = { replace: 0, fragment: 1, emphasize: 2, expand: 3, metaComment: 4 };
+      const aOrder = typeOrder[a.type as keyof typeof typeOrder] ?? 5;
+      const bOrder = typeOrder[b.type as keyof typeof typeOrder] ?? 5;
+      
+      return aOrder - bOrder;
+    });
+  }
+
+  /**
+   * Removes duplicate transformations to prevent redundant application
+   * @param transformations Array of transformations to deduplicate
+   * @returns Deduplicated transformations array
+   */
+  private deduplicateTransformations(transformations: TextTransformation[]): TextTransformation[] {
+    const seen = new Set<string>();
+    const deduplicated: TextTransformation[] = [];
+
+    transformations.forEach(transformation => {
+      // Create a unique key for this transformation
+      const key = `${transformation.type}:${transformation.selector}:${transformation.replacement || ''}`;
+      
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduplicated.push(transformation);
+      }
+    });
+
+    if (deduplicated.length < transformations.length) {
+      console.log(`[TransformationEngine] Deduplicated transformations: ${transformations.length} → ${deduplicated.length}`);
+    }
+
+    return deduplicated;
+  }
+
+  /**
+   * Helper method to parse transformations from cached content string
+   * @param cachedData Cached transformation data as JSON string
+   * @returns Array of parsed transformations
+   */
+  private parseTransformationsFromCachedContent(cachedData: string): TextTransformation[] {
+    try {
+      return JSON.parse(cachedData) as TextTransformation[];
+    } catch (error) {
+      console.warn('[TransformationEngine] Failed to parse cached transformations:', error);
+      return [];
+    }
   }
 }
 

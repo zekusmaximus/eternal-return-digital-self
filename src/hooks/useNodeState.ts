@@ -39,8 +39,6 @@ export const useNodeState = (nodeId?: string) => {
   // Track if transformations were just applied for animation
   const [newlyTransformed, setNewlyTransformed] = useState(false);  // Track which nodes have had transformations applied to prevent repeated dispatches
   const appliedNodesRef = useRef<Set<string>>(new Set());
-  // Cache for transformation calculations to prevent excessive computation
-  const transformationCacheRef = useRef<Map<string, TextTransformation[]>>(new Map());
   // Throttle transformation dispatches to prevent excessive calls
   const lastTransformationDispatchRef = useRef<number>(0);
 
@@ -114,101 +112,59 @@ export const useNodeState = (nodeId?: string) => {
   const neighbors = useMemo(() => {
     if (!node) return [];
     return node.revealedConnections;
-  }, [node]);  // Calculate all transformations (without state updates to prevent infinite loops)
+  }, [node]);  // Calculate all transformations using the new master integration method
   const allTransformations = useMemo(() => {
     if (!node?.currentContent) return [];
     
-    // Create a stable cache key to prevent excessive recalculation
-    const cacheKey = `${node.id}-${node.visitCount}-${readerState.path.sequence.length}`;
-    
-    // Check cache first
-    if (transformationCacheRef.current.has(cacheKey)) {
-      return transformationCacheRef.current.get(cacheKey)!;
-    }
-    
-    // CRITICAL: Prevent infinite loops by checking if content is already transformed
-    if (node.currentContent.includes('data-transform-type') || 
-        node.currentContent.includes('narramorph-') ||
-        node.currentContent.includes('[TransformationService]') ||
-        node.currentContent.includes('recursive loop detected') ||
-        node.currentContent.includes('temporal displacement')) {
-      console.log(`[useNodeState] Content already transformed for node ${node.id}, skipping calculation to prevent infinite loop`);
+    // Use the new master transformation coordination method
+    // This automatically handles character bleed, journey patterns, and node rules
+    // with proper priority ordering, deduplication, and caching
+    try {
+      const allNodeStates = {}; // Could be passed from parent component if available
+      const transformations = transformationEngine.calculateAllTransformations(
+        node.currentContent,
+        node,
+        readerState,
+        allNodeStates
+      );
+      
+      console.log(`[useNodeState] Master transformation integration calculated ${transformations.length} transformations for node ${node.id}`);
+      return transformations;
+      
+    } catch (error) {
+      console.error(`[useNodeState] Error in master transformation calculation for node ${node.id}:`, error);
       return [];
     }
-    
-    // Get reader-pattern based transformations (with caching to prevent repeated calculations)
-    const patternTransformations = transformationService.createTransformationsFromPatterns(
-      readerState,
-      node
-    );
-
-    // Get journey-based transformations (includes character bleed) - with throttling
-    const journeyTransformations = transformationService.calculateJourneyTransformations(
-      node.id,
-      readerState
-    );    // Combine with rule-based transformations from node
-    // Priority order: journey transformations (character bleed) first, then patterns, then rules
-    const combined = [
-      ...journeyTransformations.slice(0, 2).map(t => ({ ...t, priority: 'high' as const })), // Limit journey transformations
-      ...patternTransformations.slice(0, 2), // Limit pattern transformations to prevent excessive calculation
-      ...node.transformations.flatMap(rule =>
-        transformationEngine.evaluateCondition(rule.condition, readerState, node) ?
-          rule.transformations.slice(0, 1) : [] // Limit rule transformations even more
-      )
-    ];    // Deduplicate transformations by type and selector to prevent accumulation
-    const seen = new Set<string>();
-    const deduplicated = combined.filter(t => {
-      const key = `${t.type}-${t.selector || 'no-selector'}`;
-      if (seen.has(key)) {
-        return false;
-      }
-      seen.add(key);
-      return true;    });
-
-    // Limit transformations to prevent runaway calculations
-    const maxTransformations = 4; // Further reduced to prevent issues
-    if (deduplicated.length > maxTransformations) {
-      console.warn(`[useNodeState] Too many transformations (${deduplicated.length}) for node ${node.id}, limiting to ${maxTransformations}`);
-      const limited = deduplicated.slice(0, maxTransformations);
-      // Cache the result
-      transformationCacheRef.current.set(cacheKey, limited);
-      return limited;
-    }
-
-    // Cache the result before returning
-    transformationCacheRef.current.set(cacheKey, deduplicated);
-    
-    // Clean up old cache entries to prevent memory leaks
-    if (transformationCacheRef.current.size > 20) {
-      const entries = Array.from(transformationCacheRef.current.entries());
-      const toKeep = entries.slice(-10); // Keep last 10 entries
-      transformationCacheRef.current.clear();
-      toKeep.forEach(([key, value]) => transformationCacheRef.current.set(key, value));
-    }
-
-    return deduplicated;
-  }, [node, readerState]); // Keep all dependencies but add deduplication above
-
-  // Generate transformed content with visual transitions
+  }, [node, readerState]);
+  // Generate transformed content using the new master integration method
   const transformedContent = useMemo(() => {
-    if (!node?.currentContent || allTransformations.length === 0) return node?.currentContent || null;
+    if (!node?.currentContent) return node?.currentContent || null;
 
-    // Apply transformations with priority handling
-    const transformedText = transformationService.getCachedTransformedContent(
-      node.id,
-      node.currentContent,
-      allTransformations,
-      readerState,
-      node
-    );
+    try {
+      // Use the new master getTransformedContent method
+      // This automatically handles all transformation coordination, caching, and content application
+      const allNodeStates = {}; // Could be passed from parent component if available
+      const fullyTransformedContent = transformationEngine.getTransformedContent(
+        node,
+        readerState,
+        allNodeStates
+      );
 
-    // Add wrapper elements with transition classes
-    const wrappedContent = transformationService.wrapTransformedContent(
-      transformedText,
-      allTransformations
-    );
+      // Add wrapper elements with transition classes if transformations were applied
+      if (fullyTransformedContent !== node.currentContent && allTransformations.length > 0) {
+        const wrappedContent = transformationService.wrapTransformedContent(
+          fullyTransformedContent,
+          allTransformations
+        );
+        return wrappedContent;
+      }
 
-    return wrappedContent;
+      return fullyTransformedContent;
+      
+    } catch (error) {
+      console.error(`[useNodeState] Error in master content transformation for node ${node.id}:`, error);
+      return node?.currentContent || null;
+    }
   }, [node, readerState, allTransformations]);
 
   // Track transformation changes in a separate effect to prevent infinite loops
