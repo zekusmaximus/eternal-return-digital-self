@@ -17,9 +17,11 @@ import {
   TemporalLabel,
   NodeState,
   TextTransformation,
-  EndpointOrientation
+  EndpointOrientation,
+  Character
 } from '../types';
 import { ReaderState } from '../store/slices/readerSlice';
+import { pathAnalyzer } from './PathAnalyzer';
 
 // LRU Cache implementation for memoization
 class LRUCache<K, V> {
@@ -114,9 +116,52 @@ export interface TransformationCondition {
   
   // Character bleed condition - detects when previous node had different character
   characterBleed?: boolean;
-  
-  // Journey pattern condition - matches recent navigation sequences
+    // Journey pattern condition - matches recent navigation sequences
   journeyPattern?: string[];
+  
+  // Character focus condition - evaluates character preference patterns
+  characterFocus?: {
+    characters: Character[];
+    minFocusRatio?: number; // Default 0.4 (40%)
+    includeIntensity?: boolean; // Use character focus intensity metrics
+  };
+  
+  // Temporal focus condition - evaluates temporal layer focus patterns
+  temporalFocus?: {
+    temporalLayers: TemporalLabel[];
+    minFocusRatio?: number; // Default 0.4 (40%)
+    includeProgression?: boolean; // Check for chronological patterns
+  };
+  
+  // Attractor affinity condition - evaluates thematic affinity patterns
+  attractorAffinity?: {
+    attractors: StrangeAttractor[];
+    minAffinityRatio?: number; // Default 0.25 (25%)
+    includeThematicContinuity?: boolean; // Check thematic connections
+  };
+  
+  // Attractor engagement condition - evaluates engagement level conditions
+  attractorEngagement?: {
+    attractor: StrangeAttractor;
+    minEngagementScore?: number; // Default 50 (0-100 scale)
+    trendRequired?: 'rising' | 'falling' | 'stable' | 'any';
+  };
+  
+  // Recursive pattern condition - evaluates recursive navigation patterns
+  recursivePattern?: {
+    minPatternStrength?: number; // Default 0.6
+    maxPatternLength?: number; // Default 4
+    requireRecency?: boolean; // Pattern must be recent
+  };
+  
+  // Journey fingerprint condition - evaluates navigation style patterns
+  journeyFingerprint?: {
+    explorationStyle?: 'linear' | 'recursive' | 'wandering' | 'focused' | 'chaotic';
+    temporalPreference?: 'past-oriented' | 'present-focused' | 'future-seeking' | 'time-fluid';
+    narrativeApproach?: 'systematic' | 'intuitive' | 'thematic' | 'experimental';
+    minComplexityIndex?: number; // 0-1 scale
+    minFocusIndex?: number; // 0-1 scale
+  };
   
   // Logical operators for complex conditions
   anyOf?: TransformationCondition[]; // At least one condition must be true
@@ -180,13 +225,15 @@ export class TransformationEngine {
     nodeState: NodeState
   ): string {
     // Hash the condition object
-    const conditionHash = JSON.stringify(condition);
-      // Create a minimal reader state hash with only the parts that affect condition evaluation
+    const conditionHash = JSON.stringify(condition);    // Create a minimal reader state hash with only the parts that affect condition evaluation
     const readerStateHash = JSON.stringify({
       path: {
         sequence: readerState.path.sequence,
         revisitPatterns: readerState.path.revisitPatterns,
-        detailedVisits: readerState.path.detailedVisits // Include for characterBleed condition
+        detailedVisits: readerState.path.detailedVisits, // Include for characterBleed condition
+        characterFocus: readerState.path.characterFocus, // Include for character focus conditions
+        temporalLayerFocus: readerState.path.temporalLayerFocus, // Include for temporal focus conditions
+        attractorsEngaged: readerState.path.attractorsEngaged // Include for attractor conditions
       },
       endpointProgress: readerState.endpointProgress
     });
@@ -353,13 +400,57 @@ export class TransformationEngine {
         return false;
       }
     }
-    
-    // 10. Journey pattern condition
+      // 10. Journey pattern condition
     if (condition.journeyPattern?.length) {
       if (!this.matchesJourneyPattern(condition.journeyPattern, readerState.path.sequence)) {
         return false;
       }
     }
+    
+    // 11. Character focus condition
+    if (condition.characterFocus) {
+      if (!this.checkCharacterFocus(condition.characterFocus, readerState, nodeState)) {
+        return false;
+      }
+    }
+    
+    // 12. Temporal focus condition
+    if (condition.temporalFocus) {
+      if (!this.checkTemporalFocus(condition.temporalFocus, readerState, nodeState)) {
+        return false;
+      }
+    }
+    
+    // 13. Attractor affinity condition
+    if (condition.attractorAffinity) {
+      if (!this.checkAttractorAffinity(condition.attractorAffinity, readerState, nodeState)) {
+        return false;
+      }
+    }
+    
+    // 14. Attractor engagement condition
+    if (condition.attractorEngagement) {
+      if (!this.checkAttractorEngagement(condition.attractorEngagement, readerState, nodeState)) {
+        return false;
+      }
+    }
+    
+    // 15. Recursive pattern condition
+    if (condition.recursivePattern) {
+      if (!this.checkRecursivePattern(condition.recursivePattern, readerState, nodeState)) {
+        return false;
+      }
+    }
+    
+    // 16. Journey fingerprint condition
+    if (condition.journeyFingerprint) {
+      if (!this.checkJourneyFingerprint(condition.journeyFingerprint, readerState, nodeState)) {
+        return false;
+      }
+    }
+    
+    // Cache the result before returning
+    this.conditionCache.put(cacheKey, true);
     
     // If all conditions pass (or no conditions were specified), return true
     return true;
@@ -445,11 +536,219 @@ export class TransformationEngine {
     
     // Check if the pattern matches the most recent visits
     const recentVisits = visitsSequence.slice(-pattern.length);
-    
-    for (let i = 0; i < pattern.length; i++) {
+      for (let i = 0; i < pattern.length; i++) {
       if (recentVisits[i] !== pattern[i]) {
         return false;
       }
+    }
+    
+    return true;
+  }
+  
+  /**
+   * Checks if character focus conditions are met
+   */
+  private checkCharacterFocus(
+    characterFocus: NonNullable<TransformationCondition['characterFocus']>,
+    readerState: ReaderState,
+    nodeState: NodeState
+  ): boolean {
+    const { characters, minFocusRatio = 0.4, includeIntensity = false } = characterFocus;
+    
+    if (includeIntensity) {
+      // Use PathAnalyzer's character focus intensity analysis
+      const characterIntensities = pathAnalyzer.calculateCharacterFocusIntensity(readerState, { [nodeState.id]: nodeState });
+      
+      return characters.some(character => {
+        const intensity = characterIntensities.find(ci => ci.character === character);
+        return intensity && intensity.intensity >= minFocusRatio;
+      });
+    } else {
+      // Simple focus ratio check
+      const { characterFocus: charFocus } = readerState.path;
+      if (!charFocus) return false;
+      
+      const totalVisits = readerState.path.detailedVisits?.length || 0;
+      if (totalVisits === 0) return false;
+      
+      return characters.some(character => {
+        const visits = (charFocus as Record<string, number>)[character] || 0;
+        const focusRatio = visits / totalVisits;
+        return focusRatio >= minFocusRatio;
+      });
+    }
+  }
+  
+  /**
+   * Checks if temporal focus conditions are met
+   */
+  private checkTemporalFocus(
+    temporalFocus: NonNullable<TransformationCondition['temporalFocus']>,
+    readerState: ReaderState,
+    nodeState: NodeState
+  ): boolean {
+    const { temporalLayers, minFocusRatio = 0.4, includeProgression = false } = temporalFocus;
+    
+    const { temporalLayerFocus } = readerState.path;
+    if (!temporalLayerFocus) return false;
+    
+    const totalVisits = readerState.path.detailedVisits?.length || 0;
+    if (totalVisits === 0) return false;
+    
+    // Check basic temporal focus
+    const hasBasicFocus = temporalLayers.some(layer => {
+      const visits = (temporalLayerFocus as Record<string, number>)[layer] || 0;
+      const focusRatio = visits / totalVisits;
+      return focusRatio >= minFocusRatio;
+    });
+    
+    if (!includeProgression) {
+      return hasBasicFocus;
+    }
+    
+    // Check for progression patterns using PathAnalyzer
+    const patterns = pathAnalyzer.analyzePathPatterns(readerState, { [nodeState.id]: nodeState });
+    const temporalPatterns = patterns.filter(p => p.type === 'temporal');
+    
+    return hasBasicFocus && temporalPatterns.some(p => p.strength >= 0.3);
+  }
+  
+  /**
+   * Checks if attractor affinity conditions are met
+   */
+  private checkAttractorAffinity(
+    attractorAffinity: NonNullable<TransformationCondition['attractorAffinity']>,
+    readerState: ReaderState,
+    nodeState: NodeState
+  ): boolean {
+    const { attractors, minAffinityRatio = 0.25, includeThematicContinuity = false } = attractorAffinity;
+    
+    const { attractorsEngaged } = readerState.path;
+    if (!attractorsEngaged) return false;
+    
+    const totalEngagements = Object.values(attractorsEngaged).reduce((sum: number, count: number) => sum + count, 0);
+    if (totalEngagements === 0) return false;
+    
+    // Check basic affinity
+    const hasBasicAffinity = attractors.some(attractor => {
+      const engagements = (attractorsEngaged as Record<string, number>)[attractor] || 0;
+      const affinityRatio = engagements / totalEngagements;
+      return affinityRatio >= minAffinityRatio;
+    });
+    
+    if (!includeThematicContinuity) {
+      return hasBasicAffinity;
+    }
+    
+    // Check for thematic continuity using PathAnalyzer
+    const patterns = pathAnalyzer.analyzePathPatterns(readerState, { [nodeState.id]: nodeState });
+    const thematicPatterns = patterns.filter(p => p.type === 'thematic');
+    
+    return hasBasicAffinity && thematicPatterns.some(p => p.strength >= 0.5);
+  }
+  
+  /**
+   * Checks if attractor engagement conditions are met
+   */
+  private checkAttractorEngagement(
+    attractorEngagement: NonNullable<TransformationCondition['attractorEngagement']>,
+    readerState: ReaderState,
+    nodeState: NodeState
+  ): boolean {
+    const { attractor, minEngagementScore = 50, trendRequired = 'any' } = attractorEngagement;
+    
+    // Use PathAnalyzer's attractor engagement analysis
+    const engagements = pathAnalyzer.calculateAttractorEngagement(readerState, { [nodeState.id]: nodeState });
+    
+    const engagement = engagements.find(e => e.attractor === attractor);
+    if (!engagement) return false;
+    
+    // Check engagement score
+    if (engagement.engagementScore < minEngagementScore) return false;
+    
+    // Check trend if specified
+    if (trendRequired !== 'any' && engagement.trend !== trendRequired) return false;
+    
+    return true;
+  }
+  
+  /**
+   * Checks if recursive pattern conditions are met
+   */
+  private checkRecursivePattern(
+    recursivePattern: NonNullable<TransformationCondition['recursivePattern']>,
+    readerState: ReaderState,
+    nodeState: NodeState
+  ): boolean {
+    const { minPatternStrength = 0.6, maxPatternLength = 4, requireRecency = false } = recursivePattern;
+    
+    // Use PathAnalyzer's recursive pattern analysis
+    const patterns = pathAnalyzer.analyzeRecursivePatterns(readerState, { [nodeState.id]: nodeState });
+    
+    if (patterns.length === 0) return false;
+    
+    // Filter patterns by criteria
+    const validPatterns = patterns.filter(pattern => {
+      // Check strength
+      if (pattern.strength < minPatternStrength) return false;
+      
+      // Check length
+      if (pattern.length > maxPatternLength) return false;
+      
+      // Check recency if required
+      if (requireRecency) {
+        const recentThreshold = readerState.path.sequence.length * 0.7;
+        if (pattern.lastOccurrenceIndex < recentThreshold) return false;
+      }
+      
+      return true;
+    });
+    
+    return validPatterns.length > 0;
+  }
+  
+  /**
+   * Checks if journey fingerprint conditions are met
+   */
+  private checkJourneyFingerprint(
+    journeyFingerprint: NonNullable<TransformationCondition['journeyFingerprint']>,
+    readerState: ReaderState,
+    nodeState: NodeState
+  ): boolean {
+    const {
+      explorationStyle,
+      temporalPreference,
+      narrativeApproach,
+      minComplexityIndex,
+      minFocusIndex
+    } = journeyFingerprint;
+    
+    // Use PathAnalyzer's journey fingerprint analysis
+    const fingerprint = pathAnalyzer.generateJourneyFingerprint(readerState, { [nodeState.id]: nodeState });
+    
+    // Check exploration style
+    if (explorationStyle && fingerprint.explorationStyle !== explorationStyle) {
+      return false;
+    }
+    
+    // Check temporal preference
+    if (temporalPreference && fingerprint.temporalPreference !== temporalPreference) {
+      return false;
+    }
+    
+    // Check narrative approach
+    if (narrativeApproach && fingerprint.narrativeApproach !== narrativeApproach) {
+      return false;
+    }
+    
+    // Check complexity index
+    if (minComplexityIndex !== undefined && fingerprint.complexityIndex < minComplexityIndex) {
+      return false;
+    }
+    
+    // Check focus index
+    if (minFocusIndex !== undefined && fingerprint.focusIndex < minFocusIndex) {
+      return false;
     }
     
     return true;
