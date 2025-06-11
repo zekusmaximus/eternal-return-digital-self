@@ -878,10 +878,456 @@ export class TransformationService {
             }
           }
           break;
-      }
-    });
+      }    });
     
     return transformations;
+  }
+
+  /**
+   * Calculate journey-based transformations that respond to the reader's overall navigation patterns
+   * @param nodeId The current node being transformed
+   * @param readerState The reader's journey state
+   * @returns Array of transformations based on journey context
+   */
+  calculateJourneyTransformations(
+    nodeId: string,
+    readerState: ReaderState  ): TextTransformation[] {
+    const transformations: TextTransformation[] = [];
+
+    const currentVisit = readerState.path.detailedVisits?.find(v => v.nodeId === nodeId);
+    if (!currentVisit) {
+      return transformations;
+    }
+
+    // Detect recursive navigation patterns
+    const recursivePatterns = this.detectRecursivePattern(readerState);
+    if (recursivePatterns.length > 0) {
+      transformations.push(...this.createRecursivePatternTransformations(recursivePatterns, nodeId));
+    }
+
+    // Detect anachronic awareness (temporal displacement)
+    const anachronicAwareness = this.detectAnachronicAwareness(readerState);
+    if (anachronicAwareness.isDetected) {
+      transformations.push(...this.createAnachronicAwarenessTransformations(anachronicAwareness, nodeId));
+    }
+
+    // Get temporal displacement effects
+    const temporalEffects = this.getTemporalDisplacementEffects(readerState, currentVisit);
+    transformations.push(...temporalEffects);
+
+    // Add meta-commentary about navigation patterns
+    const metaCommentary = this.createNavigationMetaCommentary(readerState, nodeId);
+    transformations.push(...metaCommentary);
+
+    return transformations;
+  }
+
+  /**
+   * Detects when the reader is visiting nodes in repeated sequences
+   * @param readerState The reader's journey state
+   * @returns Array of detected recursive patterns
+   */
+  detectRecursivePattern(readerState: ReaderState): Array<{
+    sequence: string[];
+    occurrences: number;
+    strength: number;
+    lastOccurrence: number;
+  }> {
+    const patterns: Array<{
+      sequence: string[];
+      occurrences: number;
+      strength: number;
+      lastOccurrence: number;
+    }> = [];
+
+    const sequence = readerState.path.sequence;
+    if (sequence.length < 6) return patterns; // Need minimum length for pattern detection
+
+    // Look for sequences of 2-4 nodes that repeat
+    for (let seqLength = 2; seqLength <= 4; seqLength++) {
+      const sequenceMap = new Map<string, number[]>();
+
+      // Build map of sequence patterns to their positions
+      for (let i = 0; i <= sequence.length - seqLength; i++) {
+        const subSequence = sequence.slice(i, i + seqLength);
+        const key = subSequence.join('→');
+        
+        if (!sequenceMap.has(key)) {
+          sequenceMap.set(key, []);
+        }
+        sequenceMap.get(key)!.push(i);
+      }
+
+      // Find patterns that occur multiple times
+      sequenceMap.forEach((positions, key) => {
+        if (positions.length >= 2) {
+          const sequence = key.split('→');
+          const occurrences = positions.length;
+          
+          // Calculate strength based on frequency and recency
+          const totalLength = readerState.path.sequence.length;
+          const lastPosition = Math.max(...positions);
+          const recencyFactor = 1 - (totalLength - lastPosition) / totalLength;
+          const frequencyFactor = occurrences / (totalLength - seqLength + 1);
+          const strength = (frequencyFactor * 0.7) + (recencyFactor * 0.3);
+
+          if (strength > 0.3) { // Only include significant patterns
+            patterns.push({
+              sequence,
+              occurrences,
+              strength,
+              lastOccurrence: lastPosition
+            });
+          }
+        }
+      });
+    }
+
+    // Sort by strength and return top patterns
+    return patterns.sort((a, b) => b.strength - a.strength).slice(0, 3);
+  }
+
+  /**
+   * Detects anachronic awareness - when temporal layer focus creates narrative displacement
+   * @param readerState The reader's journey state
+   * @returns Object describing anachronic awareness state
+   */
+  detectAnachronicAwareness(readerState: ReaderState): {
+    isDetected: boolean;
+    strength: number;
+    dominantLayer: string;
+    displacement: number;
+    patterns: string[];
+  } {
+    const temporalFocus = readerState.path.temporalLayerFocus || {};
+    const detailedVisits = readerState.path.detailedVisits || [];
+    
+    if (detailedVisits.length < 5) {
+      return { isDetected: false, strength: 0, dominantLayer: '', displacement: 0, patterns: [] };
+    }    // Calculate temporal layer distribution
+    const totalVisits = detailedVisits.length;
+    const layerRatios = {
+      past: ((temporalFocus as Record<string, number>).past || 0) / totalVisits,
+      present: ((temporalFocus as Record<string, number>).present || 0) / totalVisits,
+      future: ((temporalFocus as Record<string, number>).future || 0) / totalVisits
+    };
+
+    // Find dominant layer
+    const dominantLayer = Object.entries(layerRatios)
+      .sort(([,a], [,b]) => b - a)[0][0];
+    const dominantRatio = layerRatios[dominantLayer as keyof typeof layerRatios];
+
+    // Detect anachronic patterns
+    const patterns: string[] = [];
+    
+    // Check for strong temporal layer bias
+    if (dominantRatio > 0.6) {
+      patterns.push(`temporal-dominance-${dominantLayer}`);
+    }
+
+    // Check for temporal jumping patterns
+    const recentVisits = detailedVisits.slice(-8);
+    let temporalJumps = 0;
+    
+    for (let i = 1; i < recentVisits.length; i++) {
+      const prev = recentVisits[i - 1].temporalLayer;
+      const curr = recentVisits[i].temporalLayer;
+      
+      if (prev !== curr) {
+        temporalJumps++;
+      }
+    }
+
+    const jumpRatio = temporalJumps / (recentVisits.length - 1);
+    if (jumpRatio > 0.7) {
+      patterns.push('temporal-fragmentation');
+    }
+
+    // Check for anachronic sequences (out-of-order temporal progression)
+    let anachronicSequences = 0;
+    for (let i = 2; i < recentVisits.length; i++) {
+      const layers = [
+        recentVisits[i - 2].temporalLayer,
+        recentVisits[i - 1].temporalLayer,
+        recentVisits[i].temporalLayer
+      ];
+      
+      // Check for patterns like future→past→present
+      if ((layers[0] === 'future' && layers[1] === 'past') ||
+          (layers[1] === 'future' && layers[2] === 'past') ||
+          (layers[0] === 'present' && layers[1] === 'past' && layers[2] === 'future')) {
+        anachronicSequences++;
+      }
+    }
+
+    if (anachronicSequences > 0) {
+      patterns.push('anachronic-sequencing');
+    }
+
+    // Calculate overall strength and displacement
+    const strength = Math.min(1, dominantRatio + (jumpRatio * 0.5) + (anachronicSequences * 0.3));
+    const displacement = Math.abs(0.33 - dominantRatio) * 3; // How far from balanced temporal focus
+
+    return {
+      isDetected: strength > 0.4,
+      strength,
+      dominantLayer,
+      displacement,
+      patterns
+    };
+  }
+
+  /**
+   * Creates transformations for temporal displacement effects between characters
+   * @param readerState The reader's journey state
+   * @param currentVisit The current visit information
+   * @returns Array of temporal displacement transformations
+   */  getTemporalDisplacementEffects(
+    readerState: ReaderState,
+    currentVisit: { nodeId: string; character: string; temporalLayer: string }
+  ): TextTransformation[] {
+    const transformations: TextTransformation[] = [];
+    
+    if (!currentVisit) return transformations;
+
+    // Check for character transitions with different temporal layers
+    const detailedVisits = readerState.path.detailedVisits || [];
+    const currentIndex = detailedVisits.findIndex(v => v.nodeId === currentVisit.nodeId);
+    
+    if (currentIndex > 0) {
+      const previousVisit = detailedVisits[currentIndex - 1];
+      
+      // If character and temporal layer both changed, create displacement effect
+      if (previousVisit.character !== currentVisit.character &&
+          previousVisit.temporalLayer !== currentVisit.temporalLayer) {
+        
+        const displacementType = this.getDisplacementType(
+          previousVisit.temporalLayer,
+          currentVisit.temporalLayer
+        );
+
+        transformations.push({
+          type: 'metaComment',
+          selector: 'first-paragraph',
+          replacement: `temporal displacement: ${previousVisit.temporalLayer}→${currentVisit.temporalLayer} through ${previousVisit.character}→${currentVisit.character}`,
+          commentStyle: 'marginalia',
+          intensity: 3,
+          priority: 'medium'
+        });
+
+        // Add specific displacement effects
+        switch (displacementType) {
+          case 'past-to-future':
+            transformations.push({
+              type: 'emphasize',
+              selector: 'time',
+              emphasis: 'glitch',
+              intensity: 2,
+              priority: 'low'
+            });
+            break;
+          
+          case 'future-to-past':
+            transformations.push({
+              type: 'fragment',
+              selector: 'memory',
+              fragmentPattern: '…',
+              fragmentStyle: 'progressive',
+              intensity: 2,
+              priority: 'low'
+            });
+            break;
+        }
+      }
+    }
+
+    return transformations;
+  }
+
+  /**
+   * Creates meta-commentary transformations that reference navigation patterns
+   * @param readerState The reader's journey state
+   * @param nodeId The current node ID
+   * @returns Array of meta-commentary transformations
+   */
+  private createNavigationMetaCommentary(
+    readerState: ReaderState,
+    nodeId: string
+  ): TextTransformation[] {
+    const transformations: TextTransformation[] = [];
+    const sequence = readerState.path.sequence;
+    
+    if (sequence.length < 3) return transformations;
+
+    // Calculate navigation statistics
+    const visitCount = sequence.filter(id => id === nodeId).length;
+    const uniqueNodes = new Set(sequence).size;
+    const totalVisits = sequence.length;
+    const explorationRatio = uniqueNodes / totalVisits;    // Different commentary based on navigation style
+    let commentary = '';
+
+    if (explorationRatio > 0.8) {
+      // Broad exploration
+      commentary = `You navigate with methodical exploration, visiting ${uniqueNodes} distinct locations`;
+    } else if (explorationRatio < 0.4) {
+      // Revisitation heavy
+      commentary = `Your path circles back, revisiting familiar territories ${totalVisits - uniqueNodes} times`;
+    } else if (visitCount > 2) {
+      // Node-specific revisitation
+      commentary = `This location draws you back—your ${visitCount}${this.getOrdinalSuffix(visitCount)} visit`;
+    }
+
+    if (commentary) {
+      transformations.push({
+        type: 'metaComment',
+        selector: 'navigation-pattern',
+        replacement: commentary,
+        commentStyle: 'interlinear',
+        intensity: 1,
+        priority: 'low'
+      });
+    }
+
+    // Add specific pattern recognition
+    const recentPath = sequence.slice(-5);
+    if (recentPath.includes(nodeId)) {
+      const recentVisitIndex = recentPath.lastIndexOf(nodeId);
+      const pathSinceLastVisit = recentPath.slice(recentVisitIndex + 1);
+      
+      if (pathSinceLastVisit.length > 0) {
+        transformations.push({
+          type: 'expand',
+          selector: 'last-paragraph',
+          replacement: `[returning after exploring: ${pathSinceLastVisit.join(' → ')}]`,
+          expandStyle: 'inline',
+          intensity: 1,
+          priority: 'low'
+        });
+      }
+    }
+
+    return transformations;
+  }
+
+  /**
+   * Creates transformations for detected recursive patterns
+   */
+  private createRecursivePatternTransformations(
+    patterns: Array<{ sequence: string[]; occurrences: number; strength: number }>,
+    nodeId: string
+  ): TextTransformation[] {
+    const transformations: TextTransformation[] = [];
+
+    patterns.forEach(pattern => {
+      if (pattern.sequence.includes(nodeId)) {
+        transformations.push({
+          type: 'metaComment',
+          selector: 'recursive-pattern',
+          replacement: `recursive loop detected: ${pattern.sequence.join('→')} (×${pattern.occurrences})`,
+          commentStyle: 'marginalia',
+          intensity: Math.ceil(pattern.strength * 3),
+          priority: 'medium'
+        });
+
+        // Add emphasis for strong patterns
+        if (pattern.strength > 0.6) {
+          transformations.push({
+            type: 'emphasize',
+            selector: 'pattern',
+            emphasis: 'color',
+            intensity: Math.ceil(pattern.strength * 5),
+            priority: 'medium'
+          });
+        }
+      }
+    });
+
+    return transformations;
+  }
+  /**
+   * Creates transformations for anachronic awareness
+   */
+  private createAnachronicAwarenessTransformations(
+    awareness: { strength: number; dominantLayer: string; patterns: string[] },
+    nodeId: string
+  ): TextTransformation[] {
+    const transformations: TextTransformation[] = [];
+
+    // Add temporal displacement commentary with node context
+    transformations.push({
+      type: 'metaComment',
+      selector: 'temporal-awareness',
+      replacement: `temporal displacement registered at ${nodeId}: ${awareness.dominantLayer} layer dominance`,
+      commentStyle: 'interlinear',
+      intensity: Math.ceil(awareness.strength * 3),
+      priority: 'medium'
+    });
+
+    // Add specific pattern effects
+    awareness.patterns.forEach(pattern => {
+      switch (pattern) {
+        case 'temporal-fragmentation':
+          transformations.push({
+            type: 'fragment',
+            selector: 'time',
+            fragmentPattern: '//',
+            fragmentStyle: 'random',
+            intensity: 2,
+            priority: 'low'
+          });
+          break;
+        
+        case 'anachronic-sequencing':
+          transformations.push({
+            type: 'replace',
+            selector: 'chronology',
+            replacement: 'chronology[SCRAMBLED]',
+            preserveFormatting: true,
+            intensity: 2,
+            priority: 'low'
+          });
+          break;
+        
+        default:
+          if (pattern.startsWith('temporal-dominance-')) {
+            const layer = pattern.replace('temporal-dominance-', '');
+            transformations.push({
+              type: 'emphasize',
+              selector: layer,
+              emphasis: 'color',
+              intensity: 3,
+              priority: 'medium'
+            });
+          }
+      }
+    });
+
+    return transformations;
+  }
+
+  /**
+   * Helper method to determine displacement type between temporal layers
+   */
+  private getDisplacementType(fromLayer: string, toLayer: string): string {
+    const layerOrder = { past: 0, present: 1, future: 2 };
+    const fromOrder = layerOrder[fromLayer as keyof typeof layerOrder];
+    const toOrder = layerOrder[toLayer as keyof typeof layerOrder];
+    
+    if (fromOrder < toOrder) return `${fromLayer}-to-${toLayer}`;
+    if (fromOrder > toOrder) return `${fromLayer}-to-${toLayer}`;
+    return 'same-layer';
+  }
+
+  /**
+   * Helper method to get ordinal suffix for numbers
+   */
+  private getOrdinalSuffix(num: number): string {
+    const j = num % 10;
+    const k = num % 100;
+    if (j === 1 && k !== 11) return 'st';
+    if (j === 2 && k !== 12) return 'nd';
+    if (j === 3 && k !== 13) return 'rd';
+    return 'th';
   }
 }
 
