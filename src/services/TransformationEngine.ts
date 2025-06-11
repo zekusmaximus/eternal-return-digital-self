@@ -106,12 +106,17 @@ export interface TransformationCondition {
     orientation: EndpointOrientation;
     minValue: number; // Minimum progress value (0-100)
   };
-  
-  // Revisit pattern - e.g., must have revisited a specific node at least N times
+    // Revisit pattern - e.g., must have revisited a specific node at least N times
   revisitPattern?: {
     nodeId: string;
     minVisits: number;
   }[];
+  
+  // Character bleed condition - detects when previous node had different character
+  characterBleed?: boolean;
+  
+  // Journey pattern condition - matches recent navigation sequences
+  journeyPattern?: string[];
   
   // Logical operators for complex conditions
   anyOf?: TransformationCondition[]; // At least one condition must be true
@@ -176,12 +181,12 @@ export class TransformationEngine {
   ): string {
     // Hash the condition object
     const conditionHash = JSON.stringify(condition);
-    
-    // Create a minimal reader state hash with only the parts that affect condition evaluation
+      // Create a minimal reader state hash with only the parts that affect condition evaluation
     const readerStateHash = JSON.stringify({
       path: {
         sequence: readerState.path.sequence,
-        revisitPatterns: readerState.path.revisitPatterns
+        revisitPatterns: readerState.path.revisitPatterns,
+        detailedVisits: readerState.path.detailedVisits // Include for characterBleed condition
       },
       endpointProgress: readerState.endpointProgress
     });
@@ -331,8 +336,7 @@ export class TransformationEngine {
         return false;
       }
     }
-    
-    // 8. Revisit pattern condition
+      // 8. Revisit pattern condition
     if (condition.revisitPattern?.length) {
       for (const pattern of condition.revisitPattern) {
         const revisitPatterns = readerState.path.revisitPatterns || {};
@@ -340,6 +344,20 @@ export class TransformationEngine {
         if (visits < pattern.minVisits) {
           return false;
         }
+      }
+    }
+    
+    // 9. Character bleed condition
+    if (condition.characterBleed) {
+      if (!this.checkCharacterBleed(readerState, nodeState)) {
+        return false;
+      }
+    }
+    
+    // 10. Journey pattern condition
+    if (condition.journeyPattern?.length) {
+      if (!this.matchesJourneyPattern(condition.journeyPattern, readerState.path.sequence)) {
+        return false;
       }
     }
     
@@ -390,8 +408,7 @@ export class TransformationEngine {
       return engagementCount > 0;
     });
   }
-  
-  /**
+    /**
    * Determines the temporal position (past, present, future) of a node
    * based on its temporal value
    */
@@ -399,6 +416,43 @@ export class TransformationEngine {
     if (node.temporalValue <= 3) return 'past';
     if (node.temporalValue <= 6) return 'present';
     return 'future';
+  }
+  
+  /**
+   * Checks if there is character bleed - when the previous visited node
+   * had a different character than the current node
+   */
+  private checkCharacterBleed(readerState: ReaderState, nodeState: NodeState): boolean {
+    // Check if we have detailed visits and at least 2 visits
+    if (!readerState.path.detailedVisits || readerState.path.detailedVisits.length < 2) {
+      return false;
+    }
+    
+    // Get the second-to-last visit (previous visit)
+    const previousVisit = readerState.path.detailedVisits[readerState.path.detailedVisits.length - 2];
+    
+    // Compare the character of the previous visit with the current node's character
+    return previousVisit.character !== nodeState.character;
+  }
+  
+  /**
+   * Checks if the recent navigation sequence matches the provided journey pattern
+   * The pattern must appear at the end of the sequence (most recent visits)
+   */
+  private matchesJourneyPattern(pattern: string[], visitsSequence: string[]): boolean {
+    if (pattern.length === 0) return true;
+    if (visitsSequence.length < pattern.length) return false;
+    
+    // Check if the pattern matches the most recent visits
+    const recentVisits = visitsSequence.slice(-pattern.length);
+    
+    for (let i = 0; i < pattern.length; i++) {
+      if (recentVisits[i] !== pattern[i]) {
+        return false;
+      }
+    }
+    
+    return true;
   }
   
   /**

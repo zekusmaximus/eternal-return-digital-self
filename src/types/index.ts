@@ -77,12 +77,17 @@ export interface TransformationCondition {
     orientation: EndpointOrientation;
     minValue: number; // Minimum progress value (0-100)
   };
-  
-  // Revisit pattern - e.g., must have revisited a specific node at least N times
+    // Revisit pattern - e.g., must have revisited a specific node at least N times
   revisitPattern?: {
     nodeId: string;
     minVisits: number;
   }[];
+  
+  // Character bleed condition - detects when previous node had different character
+  characterBleed?: boolean;
+  
+  // Journey pattern condition - matches recent navigation sequences
+  journeyPattern?: string[];
   
   // Logical operators for complex conditions
   anyOf?: TransformationCondition[]; // At least one condition must be true
