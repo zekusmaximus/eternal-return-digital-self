@@ -19,14 +19,20 @@ const SimpleTransformationContainer: React.FC<SimpleTransformationContainerProps
   children,
   transformations,
   nodeId
-}) => {
-  // Track previous transformation count to detect changes
+}) => {  // Track previous transformation count to detect changes
   const [prevTransformationCount, setPrevTransformationCount] = useState(0);
   const [isNewlyTransformed, setIsNewlyTransformed] = useState(false);
+  const [transformationSignature, setTransformationSignature] = useState('');
   
   // When transformations change, update state to show indicators
   useEffect(() => {
-    if (transformations.length !== prevTransformationCount) {
+    // Create a signature to detect actual transformation changes, not just count changes
+    const currentSignature = transformations
+      .map(t => `${t.type}-${t.selector || 'no-selector'}-${JSON.stringify(t)}`)
+      .sort()
+      .join('|');
+    
+    if (currentSignature !== transformationSignature) {
       // Detect if new transformations were added
       if (transformations.length > prevTransformationCount) {
         setIsNewlyTransformed(true);
@@ -36,13 +42,18 @@ const SimpleTransformationContainer: React.FC<SimpleTransformationContainerProps
           setIsNewlyTransformed(false);
         }, 2000);
         
+        // Update state
+        setPrevTransformationCount(transformations.length);
+        setTransformationSignature(currentSignature);
+        
         return () => clearTimeout(timer);
+      } else {
+        // Just update tracking without animation if count didn't increase
+        setPrevTransformationCount(transformations.length);
+        setTransformationSignature(currentSignature);
       }
-      
-      // Update previous count
-      setPrevTransformationCount(transformations.length);
     }
-  }, [transformations.length, prevTransformationCount]);
+  }, [transformations, transformationSignature, prevTransformationCount]);
   
   // Get a description of transformation activity for tooltip
   const getTransformationDescription = () => {

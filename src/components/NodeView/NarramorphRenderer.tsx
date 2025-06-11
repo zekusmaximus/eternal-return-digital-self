@@ -497,8 +497,7 @@ const NarramorphRenderer: React.FC<NarramorphRendererProps> = memo(({ nodeId, on
           )}
         </div>
       </TransformationAnimationContainer>
-      
-      {/* Optional debugging panel for tracking applied transformations */}
+        {/* Optional debugging panel for tracking applied transformations */}
       {process.env.NODE_ENV === 'development' && (
         <div className="narramorph-debug">
           <h4>Applied Transformations {isVisible ? '(Visible)' : '(Hidden)'}</h4>
@@ -511,9 +510,22 @@ const NarramorphRenderer: React.FC<NarramorphRendererProps> = memo(({ nodeId, on
           </ul>
           <p>Path Length: {readingPath.sequence.length}</p>
           <p>Visit Count: {node.visitCount}</p>
+          <p>Journey Context: {node.journeyContext ? 'Active' : 'None'}</p>
+          {node.journeyContext && (
+            <div>
+              <p>Last Character: {node.journeyContext.lastVisitedCharacter || 'None'}</p>
+              <p>Recursive Awareness: {(node.journeyContext.recursiveAwareness * 100).toFixed(1)}%</p>
+              <p>Temporal Displacement: {node.journeyContext.temporalDisplacement ? 'Yes' : 'No'}</p>
+            </div>
+          )}
           <p>Performance: {metrics.renderTime.toFixed(2)}ms for {metrics.transformationsCount} transformations</p>
           <p>Deferred: {metrics.deferredTransformations} transformations</p>
           <p>Visibility Changes: {metrics.visibilityChanges}</p>
+          <p>Character Bleed Detected: {
+            prioritizedTransformations.some(t => 
+              t.type === 'fragment' || t.type === 'emphasize' && t.intensity && t.intensity > 3
+            ) ? 'Yes' : 'No'
+          }</p>
         </div>
       )}
     </div>

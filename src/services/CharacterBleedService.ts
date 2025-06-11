@@ -30,46 +30,56 @@ export interface CharacterBleedEffect {
  * Service for calculating character influence bleed effects
  */
 export class CharacterBleedService {
-  
-  /**
+    /**
    * Calculates character bleed effects based on character transitions
    * @param currentNode The current node being visited
    * @param readerState The current reader state with visit history
    * @returns Array of character bleed transformation effects
-   */
-  static calculateBleedEffects(
+   */  static calculateBleedEffects(
     currentNode: NodeState,
     readerState: ReaderState
   ): CharacterBleedEffect[] {
     const effects: CharacterBleedEffect[] = [];
-    
+
     // Get the last visited node to determine character transition
     const lastVisitedNode = this.getLastVisitedNode(readerState);
-    
+
+    console.log(`[CharacterBleedService] Analyzing character bleed for node ${currentNode.id}:`, {
+      currentCharacter: currentNode.character,
+      lastVisitedCharacter: lastVisitedNode?.character || 'None',
+      lastVisitedNode: lastVisitedNode?.nodeId || 'None'
+    });
+
     if (!lastVisitedNode || lastVisitedNode.character === currentNode.character) {
       // No bleed effect if no previous character or same character
+      console.log(`[CharacterBleedService] No character bleed detected - ${!lastVisitedNode ? 'no previous character' : 'same character'}`);
       return effects;
     }
-    
-    // Get character-specific bleed effects for this transition
+
+    console.log(`[CharacterBleedService] Character transition detected: ${lastVisitedNode.character} → ${currentNode.character}`);
+
+    // Get character-specific bleed effects for this transition (LIMITED)
     const specificEffects = this.getCharacterSpecificBleed(
       lastVisitedNode.character,
       currentNode.character,
       currentNode
-    );
-    
+    ).slice(0, 2); // Limit to 2 specific effects
+
     effects.push(...specificEffects);
-    
-    // Add general bleed effects based on character transition patterns
+    console.log(`[CharacterBleedService] Added ${specificEffects.length} character-specific bleed effects`);
+
+    // Add general bleed effects based on character transition patterns (LIMITED)
     const generalEffects = this.getGeneralBleedEffects(
       lastVisitedNode.character,
       currentNode.character,
       currentNode,
       readerState
-    );
-    
+    ).slice(0, 1); // Limit to 1 general effect
+
     effects.push(...generalEffects);
-    
+    console.log(`[CharacterBleedService] Added ${generalEffects.length} general bleed effects`);
+
+    console.log(`[CharacterBleedService] Total character bleed effects: ${effects.length}`);
     return effects;
   }
   

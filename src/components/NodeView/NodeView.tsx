@@ -4,7 +4,6 @@ import { useEffect, useState, lazy, Suspense, useRef, useMemo, useCallback } fro
 import ErrorBoundary from '../common/ErrorBoundary';
 import SimpleTextRenderer from './SimpleTextRenderer';
 import { viewManager } from '../../services/ViewManager';
-import { webGLContextManager } from '../../services/WebGLContextManager';
 import { useSelector } from 'react-redux';
 import {
   selectSelectedNodeId,
@@ -62,10 +61,6 @@ const remarkGfmPromise = import('remark-gfm').then(module => {
   return module.default;
 });
 
-// Force simple rendering flag - set to false to allow automatic decision based on system capabilities
-// Set to true to always use the simplified direct renderer
-const FORCE_SIMPLE_RENDERING = false;
-
 // Loading components
 const ContentLoading = () => (
   <div className="content-loading">
@@ -85,23 +80,39 @@ const NodeView = () => {
   // Get unique view key from ViewManager to force proper unmount/remount
   const uniqueViewKey = useMemo(() => viewManager.getUniqueViewKey(), []);
 
-  // Reference for MiniConstellation
-
   // State to control transition between ReactMarkdown and NarramorphRenderer
-  // Moved to top level before any conditional returns
   const [useNarramorph, setUseNarramorph] = useState(false);
   
   // Add fallback state for handling WebGL context loss
   const [useWebGLFallback, setUseWebGLFallback] = useState(false);
   
   // Track if simple renderer has been forced
-  const [forceSimpleRenderer, setForceSimpleRenderer] = useState(FORCE_SIMPLE_RENDERING);
+  const [forceSimpleRenderer, setForceSimpleRenderer] = useState(true); // FORCE SIMPLE RENDERER TO STOP INFINITE LOOPS
   
   // Track if WebGL is available for this view (determined by context manager)
-  const [webGLAvailable, setWebGLAvailable] = useState(true);
+  const webGLAvailable = true;
   
   // Reference to content container for visibility debugging
   const contentContainerRef = useRef<HTMLDivElement>(null);
+  const renderCompleteCalledRef = useRef(false);
+  const processedNodeRef = useRef<string | null>(null);
+  const narramorphActivatedRef = useRef(false);
+
+  // Create a state to track view transitions
+  const [viewTransitionState, setViewTransitionState] = useState({
+    transitionTime: Date.now(),
+    lastViewMode: viewMode,
+    transitionCount: 0,
+    renderCount: 0
+  });
+  
+  // Track memory usage
+  const [memoryStats, setMemoryStats] = useState({
+    jsHeapSizeLimit: 0,
+    totalJSHeapSize: 0,
+    usedJSHeapSize: 0,
+    timestamp: 0
+  });
 
   // Define onVisibilityChange using useCallback
   const onVisibilityChange = useCallback((isVisible: boolean) => {
@@ -118,7 +129,10 @@ const NodeView = () => {
       return;
     }
 
-    setContentDebug(prev => ({ ...prev, visibilityIssue: !isVisible }));
+    // Only update debug state once to prevent render loops
+    if (!renderCompleteCalledRef.current) {
+      setContentDebug(prev => ({ ...prev, visibilityIssue: !isVisible }));
+    }
   }, []);
   
   // Debug state to track content status
@@ -133,6 +147,13 @@ const NodeView = () => {
 
   // Define onRenderComplete using useCallback to memoize it
   const onRenderComplete = useCallback(() => {
+    // Prevent multiple calls to this function
+    if (renderCompleteCalledRef.current) {
+      console.log('[NodeView] Skipping duplicate onRenderComplete call');
+      return;
+    }
+    
+    renderCompleteCalledRef.current = true;
     console.log('[NodeView] SimpleTextRenderer completed rendering');
 
     // BUGFIX: Ensure content remains visible after render
@@ -163,57 +184,18 @@ const NodeView = () => {
         }
       }
     }, 500);
-  }, []); // Empty dependency array ensures this function is not recreated on re-renders
-  
-  // Register with ViewManager
-  useEffect(() => {
-    if (viewMode === 'reading') {
-      viewManager.registerViewMount('reading', true);
-      
-      // Check WebGL availability for this view
-      const webGLSupport = webGLContextManager.checkWebGLSupport();
-      setWebGLAvailable(!webGLSupport.isLowEndDevice);
-      
-      console.log(`[NodeView] Mounted reading view, WebGL available: ${webGLAvailable}`);
-    }
-    
-    return () => {
-      if (viewMode === 'reading') {
-        viewManager.registerViewMount('reading', false);
-        console.log('[NodeView] Unmounted reading view');
-      }
-    };
-  }, [viewMode, webGLAvailable]);
+  }, []);
 
-  // Set up timing markers to debug when content disappears
+  // Reset callback flags when node changes
   useEffect(() => {
-    if (selectedNodeId) {
-      console.time(`node-${selectedNodeId}-visibility`);
+    if (selectedNodeId !== processedNodeRef.current) {
+      renderCompleteCalledRef.current = false;
+      processedNodeRef.current = selectedNodeId;
+      narramorphActivatedRef.current = false;
     }
-    return () => {
-      if (selectedNodeId) {
-        console.timeEnd(`node-${selectedNodeId}-visibility`);
-      }
-    };
   }, [selectedNodeId]);
-  
-  // Create a state to track view transitions
-  const [viewTransitionState, setViewTransitionState] = useState({
-    transitionTime: 0,
-    lastViewMode: viewMode,
-    transitionCount: 0,
-    renderCount: 0
-  });
-  
-  // Track memory usage
-  const [memoryStats, setMemoryStats] = useState({
-    jsHeapSizeLimit: 0,
-    totalJSHeapSize: 0,
-    usedJSHeapSize: 0,
-    timestamp: 0
-  });
-  
-  // Effect to track view transitions
+
+  // Effect to track view transitions and manage render count
   useEffect(() => {
     if (viewTransitionState.lastViewMode !== viewMode) {
       const now = Date.now();
@@ -223,7 +205,8 @@ const NodeView = () => {
         ...prev,
         lastViewMode: viewMode,
         transitionTime: now,
-        transitionCount: prev.transitionCount + 1
+        transitionCount: prev.transitionCount + 1,
+        renderCount: prev.renderCount + 1
       }));
       
       // Reset content debug state on transition
@@ -246,71 +229,93 @@ const NodeView = () => {
           usedJSHeapSize: memory.usedJSHeapSize,
           timestamp: now
         });
-        
-        console.log(`[NodeView] Memory usage at transition:`, {
-          usedHeap: Math.round(memory.usedJSHeapSize / (1024 * 1024)) + 'MB',
-          totalHeap: Math.round(memory.totalJSHeapSize / (1024 * 1024)) + 'MB',
-          limit: Math.round(memory.jsHeapSizeLimit / (1024 * 1024)) + 'MB'
-        });
       }
+    } else {
+      // Increment render count on each render without transition
+      setViewTransitionState(prev => ({
+        ...prev,
+        renderCount: prev.renderCount + 1
+      }));
     }
-    
-    // Increment render count on each render
-    setViewTransitionState(prev => ({
-      ...prev,
-      renderCount: prev.renderCount + 1
-    }));
   }, [viewMode, viewTransitionState.lastViewMode]);
   
-  // Effect to load content if needed
+  // Effect to load content if needed - CRITICAL FIX to prevent infinite loops
   useEffect(() => {
-    if (selectedNodeId && (!node?.content || !node?.currentContent)) {
+    // Only check if we need to load content, don't depend on the content itself
+    const needsContent = selectedNodeId && !node?.content;
+    if (needsContent) {
       console.log(`[NodeView] Loading content for node: ${selectedNodeId}`, {
-        viewMode,
-        transitionCount: viewTransitionState.transitionCount,
-        timeElapsed: Date.now() - viewTransitionState.transitionTime + 'ms'
+        viewMode
       });
       setContentDebug(prev => ({ ...prev, loadStarted: true }));
       dispatch(loadNodeContent(selectedNodeId));
     }
-    
-    // Debug when content is loaded
-    if (node?.currentContent) {
-      console.log(`[NodeView] Content loaded for node: ${selectedNodeId}`, {
-        contentLength: node.currentContent.length,
-        visitCount: node.visitCount,
-        timeElapsed: Date.now() - viewTransitionState.transitionTime + 'ms'
-      });
-      setContentDebug(prev => ({ ...prev, contentLoaded: true }));
+  }, [selectedNodeId, dispatch, viewMode, node?.content]);
+
+  // Create stable values for dependencies to prevent hook warnings
+  const contentLength = node?.currentContent?.length || 0;
+  
+  // Create stable derived values to avoid dependency on full content string
+  const contentCorrupted = useMemo(() => {
+    if (!node?.currentContent) return false;
+    return (
+      node.currentContent.includes('[object Object]') ||
+      node.currentContent.includes('undefined') ||
+      node.currentContent.length < 10
+    );
+  }, [node?.currentContent]);
+  
+  const contentPreview = useMemo(() => {
+    return node?.currentContent?.substring(0, 50) || 'NO CONTENT';
+  }, [node?.currentContent]);
+
+  // Separate effect for content loaded debugging - SIMPLIFIED to prevent loops
+  useEffect(() => {
+    if (node?.id && processedNodeRef.current === selectedNodeId) {
+      const hasCurrentContent = contentLength > 0; // Use contentLength instead of !!node.currentContent
       
-      // Check for content corruption
-      if (node.currentContent.includes('[object Object]') ||
-          node.currentContent.includes('undefined') ||
-          node.currentContent.length < 10) {
+      console.log(`[NodeView] Content processed for node: ${selectedNodeId}`, {
+        hasContent: hasCurrentContent,
+        visitCount: node.visitCount,
+        contentLength,
+        contentPreview, // Use the stable derived value
+        enhancedContentExists: !!node.enhancedContent,
+        contentExists: !!node.content
+      });
+      
+      setContentDebug(prev => ({ ...prev, contentLoaded: hasCurrentContent }));
+      
+      // Use the stable derived value for corruption check
+      if (hasCurrentContent && contentCorrupted) {
         console.error(`[NodeView] Possible content corruption detected:`, {
-          contentStart: node.currentContent.substring(0, 100),
-          contentLength: node.currentContent.length
+          contentStart: contentPreview,
+          contentLength
         });
       }
     }
-  }, [selectedNodeId, node, dispatch, viewMode, viewTransitionState.transitionCount, viewTransitionState.transitionTime]);
-  
-  // Separate effect to track node visits - only runs when selectedNodeId changes
-  useEffect(() => {
-    if (selectedNodeId) {
-      dispatch(visitNode(selectedNodeId));
-    }
-  }, [selectedNodeId, dispatch]); // Removed node dependency to prevent infinite loop
-  
+  }, [
+    selectedNodeId, 
+    node?.id, 
+    node?.visitCount, 
+    node?.content,
+    node?.enhancedContent,
+    contentLength, 
+    contentPreview,
+    contentCorrupted
+  ]);
+
   // Preload components and enable Narramorph transformations after content is loaded
   useEffect(() => {
-    if (node?.currentContent) {
+    // Only check if node has content, don't depend on content value to prevent loops
+    if (node?.id && contentLength > 0 && !narramorphActivatedRef.current) {
       console.log(`[NodeView] Preparing to activate Narramorph for node: ${node.id}`, {
         viewMode,
-        timeElapsed: Date.now() - viewTransitionState.transitionTime + 'ms',
-        contentLength: node.currentContent.length
+        hasContent: contentLength > 0
       });
       setContentDebug(prev => ({ ...prev, renderStarted: true }));
+      
+      // Mark as activated to prevent repeated calls
+      narramorphActivatedRef.current = true;
       
       // First ensure NarramorphRenderer is loaded before enabling it
       // This prevents the race condition between component loading and state changes
@@ -379,7 +384,14 @@ const NodeView = () => {
       return () => clearTimeout(visibilityTimer);
     }
     return undefined; // Explicit return for when condition is false
-  }, [node?.currentContent, node?.id, viewMode, viewTransitionState.transitionTime]);
+  }, [contentLength, node?.id, viewMode]);
+  
+  // Separate effect to track node visits - only runs when selectedNodeId changes
+  useEffect(() => {
+    if (selectedNodeId) {
+      dispatch(visitNode(selectedNodeId));
+    }
+  }, [selectedNodeId, dispatch]);
   
   // Handle WebGL context loss errors
   useEffect(() => {
@@ -433,8 +445,6 @@ const NodeView = () => {
     dispatch(returnToConstellation());
   };
 
-  // Removed MiniConstellation dragging handlers
-
   if (viewMode !== 'reading' || !node) {
     return null;
   }
@@ -487,7 +497,7 @@ const NodeView = () => {
               onVisibilityChange={onVisibilityChange}
             />
           </div>
-) : (
+        ) : (
           // Try advanced rendering if conditions allow
           <Suspense fallback={<ContentLoading />}>
             {useNarramorph && !useWebGLFallback ? (
@@ -552,25 +562,23 @@ const NodeView = () => {
         )}
         
         {/* Enhanced debug indicator with transition tracking */}
-        {(
-          <div className="debug-indicator">
-            <div className={`status-dot ${contentDebug.contentLoaded ? 'status-green' : 'status-red'}`} title="Content loaded"></div>
-            <div className={`status-dot ${contentDebug.narramorphActivated ? 'status-green' : 'status-yellow'}`} title="Narramorph active"></div>
-            <div className={`status-dot ${contentDebug.errorOccurred ? 'status-red' : 'status-green'}`} title="No errors"></div>
-            <div className={`status-dot ${contentDebug.visibilityIssue ? 'status-red' : 'status-green'}`} title="Content visible"></div>
-            <div className={`status-dot ${forceSimpleRenderer ? 'status-blue' : 'status-yellow'}`} title="Simple renderer"></div>
-            <div className={`status-dot ${webGLAvailable ? 'status-green' : 'status-red'}`} title="WebGL available"></div>
-            <div className="debug-metrics">
-              <span title="View transition count">T:{viewTransitionState.transitionCount}</span>
-              <span title="Render count">R:{viewTransitionState.renderCount}</span>
-              {memoryStats.usedJSHeapSize > 0 && (
-                <span title="Memory usage">
-                  M:{Math.round(memoryStats.usedJSHeapSize / (1024 * 1024))}MB
-                </span>
-              )}
-            </div>
+        <div className="debug-indicator">
+          <div className={`status-dot ${contentDebug.contentLoaded ? 'status-green' : 'status-red'}`} title="Content loaded"></div>
+          <div className={`status-dot ${contentDebug.narramorphActivated ? 'status-green' : 'status-yellow'}`} title="Narramorph active"></div>
+          <div className={`status-dot ${contentDebug.errorOccurred ? 'status-red' : 'status-green'}`} title="No errors"></div>
+          <div className={`status-dot ${contentDebug.visibilityIssue ? 'status-red' : 'status-green'}`} title="Content visible"></div>
+          <div className={`status-dot ${forceSimpleRenderer ? 'status-blue' : 'status-yellow'}`} title="Simple renderer"></div>
+          <div className={`status-dot ${webGLAvailable ? 'status-green' : 'status-red'}`} title="WebGL available"></div>
+          <div className="debug-metrics">
+            <span title="View transition count">T:{viewTransitionState.transitionCount}</span>
+            <span title="Render count">R:{viewTransitionState.renderCount}</span>
+            {memoryStats.usedJSHeapSize > 0 && (
+              <span title="Memory usage">
+                M:{Math.round(memoryStats.usedJSHeapSize / (1024 * 1024))}MB
+              </span>
+            )}
           </div>
-        )}
+        </div>
       </div>
     );
   };

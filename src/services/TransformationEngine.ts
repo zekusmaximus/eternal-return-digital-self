@@ -511,12 +511,17 @@ export class TransformationEngine {
   
   /**
    * Applies a text transformation to the given content with caching
-   */
-  /**
+   */  /**
    * Applies a text transformation to the given content with enhanced caching
    */
   applyTextTransformation(content: string, transformation: TextTransformation): string {
     if (!transformation.selector) return content;
+    
+    // Prevent infinite loops by checking if content is already heavily transformed
+    if (content.includes('data-transform-type') && content.length > 10000) {
+      console.warn('[TransformationEngine] Content appears heavily transformed, skipping to prevent infinite loop');
+      return content;
+    }
     
     this.stats.transformations++;
     
@@ -532,7 +537,7 @@ export class TransformationEngine {
       this.stats.transformationCacheHits++;
       return cachedTransformation;
     }
-    
+
     const escapedSelector = this.escapeRegExp(transformation.selector);
     const selectorRegex = new RegExp(escapedSelector, 'g');
     
@@ -785,8 +790,7 @@ export class TransformationEngine {
   
   /**
    * Applies multiple transformations to content with enhanced caching
-   */
-  /**
+   */  /**
    * Applies multiple transformations to content with enhanced caching and batching
    * for improved performance
    */
@@ -798,6 +802,13 @@ export class TransformationEngine {
     }
     
     if (!Array.isArray(transformations) || transformations.length === 0) {
+      return content;
+    }
+
+    // Prevent infinite loops by checking if content is already heavily transformed
+    if (content.includes('data-transform-type') && 
+        (content.length > 15000 || transformations.length > 20)) {
+      console.warn('[TransformationEngine] Content appears heavily transformed or too many transformations, skipping batch to prevent infinite loop');
       return content;
     }
     

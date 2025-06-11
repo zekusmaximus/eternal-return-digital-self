@@ -15,7 +15,10 @@ export const contentMapping = {
     // Last Human nodes
     'human-discovery': '/src/content/human-discovery.md',
     'human-recognition': '/src/content/human-recognition.md',
-    'human-upload': '/src/content/human-upload.md'
+    'human-upload': '/src/content/human-upload.md',
+    
+    // Test nodes
+    'character-bleed-test': '/src/content/character-bleed-test.md'
   };
   
   // Define a type for the keys of contentMapping

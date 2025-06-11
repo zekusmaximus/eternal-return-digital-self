@@ -393,8 +393,7 @@ export class TransformationService {
     this.visibilityTracker[nodeId].pendingTransformations.push(transformation);
     this.metrics.lazyTransformationsDeferredCount++;
   }
-  
-  /**
+    /**
    * Enhanced content transformation with caching, partial updates, and lazy evaluation
    */
   getCachedTransformedContent(
@@ -404,6 +403,17 @@ export class TransformationService {
     readerState: ReaderState,
     nodeState: NodeState
   ): string {
+    // Early return if no transformations needed
+    if (!transformations || transformations.length === 0) {
+      return content;
+    }
+
+    // Prevent infinite loops by checking if content has already been transformed
+    if (content.includes('data-transform-type') || content.includes('narramorph-')) {
+      console.log(`[TransformationService] Content already transformed for node ${nodeId}, skipping to prevent infinite loop`);
+      return content;
+    }
+
     // Calculate cache key components
     const patternHash = this.calculatePatternHash(readerState);
     const cacheKey = this.getCacheKey(nodeId, nodeState.visitCount, patternHash);
@@ -414,8 +424,10 @@ export class TransformationService {
     // Track if this node is visible (for metrics)
     const isVisible = this.visibilityTracker[nodeId]?.isVisible || false;
     
-    // Check if we have a cached version
-    if (this.cache[cacheKey] && this.cache[cacheKey].content) {
+    // Check if we have a cached version with the same content
+    if (this.cache[cacheKey] && 
+        this.cache[cacheKey].content && 
+        this.cache[cacheKey].content.length > content.length) { // Only use cache if it's actually transformed content
       this.metrics.cacheHits++;
       
       // If we have a cache hit but the content isn't visible, mark for lazy processing
@@ -427,6 +439,13 @@ export class TransformationService {
     }
     
     this.metrics.cacheMisses++;
+    
+    // Limit transformation count to prevent runaway transformations
+    const maxTransformations = 10;
+    if (transformations.length > maxTransformations) {
+      console.warn(`[TransformationService] Too many transformations (${transformations.length}) for node ${nodeId}, limiting to ${maxTransformations}`);
+      transformations = transformations.slice(0, maxTransformations);
+    }
     
     // If content isn't visible and transformations are expensive,
     // consider deferring expensive transformations
@@ -453,31 +472,34 @@ export class TransformationService {
       nodeState
     );
     
-    // Track transformed segments for partial updates
-    const transformedSegments = transformations.map(t => ({
-      selector: t.selector || '',
-      transformType: t.type,
-      position: this.findPositionInContent(content, t.selector || '') as [number, number]
-    })).filter(seg => seg.position[0] >= 0);
-    
-    // Cache the result with metadata
-    this.cache[cacheKey] = {
-      transformations,
-      timestamp: Date.now(),
-      content: transformedContent,
-      transformedSegments,
-      metadata: {
-        readerStateHash: JSON.stringify({
-          path: readerState.path.sequence.slice(-5),
-          attractors: Object.keys(readerState.path.attractorsEngaged || {})
-        }),
-        nodeStateHash: JSON.stringify({
-          id: nodeState.id,
-          visitCount: nodeState.visitCount
-        }),
-        complexity: this.calculateTransformationComplexity(transformations)
-      }
-    };
+    // Only cache if the content was actually transformed
+    if (transformedContent !== content) {
+      // Track transformed segments for partial updates
+      const transformedSegments = transformations.map(t => ({
+        selector: t.selector || '',
+        transformType: t.type,
+        position: this.findPositionInContent(content, t.selector || '') as [number, number]
+      })).filter(seg => seg.position[0] >= 0);
+      
+      // Cache the result with metadata
+      this.cache[cacheKey] = {
+        transformations,
+        timestamp: Date.now(),
+        content: transformedContent,
+        transformedSegments,
+        metadata: {
+          readerStateHash: JSON.stringify({
+            path: readerState.path.sequence.slice(-5),
+            attractors: Object.keys(readerState.path.attractorsEngaged || {})
+          }),
+          nodeStateHash: JSON.stringify({
+            id: nodeState.id,
+            visitCount: nodeState.visitCount
+          }),
+          complexity: this.calculateTransformationComplexity(transformations)
+        }
+      };
+    }
     
     return transformedContent;
   }
@@ -755,8 +777,7 @@ export class TransformationService {
     
     // Get visibility status for lazy evaluation
     const isNodeVisible = this.visibilityTracker[nodeState.id]?.isVisible || false;
-    
-    // Only perform expensive pattern analysis if the node is visible
+      // Only perform expensive pattern analysis if the node is visible
     // or if it's the first time analyzing this node
     if (!isNodeVisible && nodeState.visitCount > 1) {
       // Return minimal transformations for non-visible content
@@ -771,29 +792,30 @@ export class TransformationService {
       
       return minimalTransformations;
     }
-    
+
     // Get patterns from the path analyzer - expensive operation
     const patterns = pathAnalyzer.identifySignificantPatterns(readerState, {
       [nodeState.id]: nodeState
     });
-    
+
     // Get attractor engagements - another expensive operation
     const attractorEngagements = pathAnalyzer.calculateAttractorEngagement(readerState, {
       [nodeState.id]: nodeState
     });
-    
+
     // Create transformation conditions from patterns
     const patternConditions = pathAnalyzer.createTransformationConditions(
       patterns,
       attractorEngagements
     );
-    
-    // Convert pattern conditions to text transformations
+
+    // Convert pattern conditions to text transformations (LIMIT TO PREVENT EXCESSIVE TRANSFORMATIONS)
     const transformations: TextTransformation[] = [];
-    
+    const maxPatternTransformations = 2; // Limit pattern transformations
+
     // Add priority field to transformations for later optimization
     
-    patternConditions.forEach(condition => {
+    patternConditions.slice(0, maxPatternTransformations).forEach(condition => {
       // We'll create different transformation types based on the pattern type
       switch (condition.type) {
         case 'visitPattern':
@@ -882,43 +904,72 @@ export class TransformationService {
     
     return transformations;
   }
-
   /**
    * Calculate journey-based transformations that respond to the reader's overall navigation patterns
    * @param nodeId The current node being transformed
    * @param readerState The reader's journey state
    * @returns Array of transformations based on journey context
-   */
-  calculateJourneyTransformations(
+   */  calculateJourneyTransformations(
     nodeId: string,
     readerState: ReaderState  ): TextTransformation[] {
+    
+    // CRITICAL: Add caching and infinite loop prevention
+    const cacheKey = `journey-${nodeId}-${readerState.path.sequence.length}`;
+    if (this.cache[cacheKey] && this.cache[cacheKey].transformations) {
+      console.log(`[TransformationService] Using cached journey transformations for node ${nodeId}`);
+      return this.cache[cacheKey].transformations;
+    }
+    
     const transformations: TextTransformation[] = [];
 
     const currentVisit = readerState.path.detailedVisits?.find(v => v.nodeId === nodeId);
     if (!currentVisit) {
+      console.log(`[TransformationService] No current visit found for journey transformations on node ${nodeId}`);
       return transformations;
     }
 
-    // Detect recursive navigation patterns
+    console.log(`[TransformationService] Calculating journey transformations for node ${nodeId}:`, {
+      pathLength: readerState.path.sequence.length,
+      detailedVisits: readerState.path.detailedVisits?.length || 0,
+      currentCharacter: currentVisit.character
+    });    // Limit the number of transformations to prevent infinite loops
+    const maxTransformations = 2; // Further reduced to prevent excessive transformations
+
+    // Detect recursive navigation patterns (limited)
     const recursivePatterns = this.detectRecursivePattern(readerState);
-    if (recursivePatterns.length > 0) {
-      transformations.push(...this.createRecursivePatternTransformations(recursivePatterns, nodeId));
+    if (recursivePatterns.length > 0 && transformations.length < maxTransformations) {
+      const recursiveTransformations = this.createRecursivePatternTransformations(recursivePatterns, nodeId);
+      transformations.push(...recursiveTransformations.slice(0, 1)); // Limit to 1
+      console.log(`[TransformationService] Added ${Math.min(recursiveTransformations.length, 1)} recursive pattern transformations`);
     }
 
-    // Detect anachronic awareness (temporal displacement)
-    const anachronicAwareness = this.detectAnachronicAwareness(readerState);
-    if (anachronicAwareness.isDetected) {
-      transformations.push(...this.createAnachronicAwarenessTransformations(anachronicAwareness, nodeId));
+    // Detect anachronic awareness (temporal displacement) (limited)
+    if (transformations.length < maxTransformations) {
+      const anachronicAwareness = this.detectAnachronicAwareness(readerState);
+      if (anachronicAwareness.isDetected) {
+        const anachronicTransformations = this.createAnachronicAwarenessTransformations(anachronicAwareness, nodeId);
+        transformations.push(...anachronicTransformations.slice(0, 1)); // Limit to 1
+        console.log(`[TransformationService] Added ${Math.min(anachronicTransformations.length, 1)} anachronic awareness transformations`);
+      }
+    }    // Get temporal displacement effects (limited)
+    if (transformations.length < maxTransformations) {
+      const temporalEffects = this.getTemporalDisplacementEffects(readerState, currentVisit);
+      // Only add temporal effects if we have room and they exist
+      if (temporalEffects.length > 0) {
+        transformations.push(...temporalEffects.slice(0, 1)); // Limit to 1
+        console.log(`[TransformationService] Added ${Math.min(temporalEffects.length, 1)} temporal displacement effects`);
+      }
     }
 
-    // Get temporal displacement effects
-    const temporalEffects = this.getTemporalDisplacementEffects(readerState, currentVisit);
-    transformations.push(...temporalEffects);
-
-    // Add meta-commentary about navigation patterns
-    const metaCommentary = this.createNavigationMetaCommentary(readerState, nodeId);
-    transformations.push(...metaCommentary);
-
+    console.log(`[TransformationService] Total journey transformations for node ${nodeId}: ${transformations.length}`);
+    
+    // Cache the result to prevent repeated calculations
+    this.cache[cacheKey] = {
+      transformations,
+      timestamp: Date.now(),
+      content: ''
+    };
+    
     return transformations;
   }
 
@@ -1143,72 +1194,6 @@ export class TransformationService {
 
     return transformations;
   }
-
-  /**
-   * Creates meta-commentary transformations that reference navigation patterns
-   * @param readerState The reader's journey state
-   * @param nodeId The current node ID
-   * @returns Array of meta-commentary transformations
-   */
-  private createNavigationMetaCommentary(
-    readerState: ReaderState,
-    nodeId: string
-  ): TextTransformation[] {
-    const transformations: TextTransformation[] = [];
-    const sequence = readerState.path.sequence;
-    
-    if (sequence.length < 3) return transformations;
-
-    // Calculate navigation statistics
-    const visitCount = sequence.filter(id => id === nodeId).length;
-    const uniqueNodes = new Set(sequence).size;
-    const totalVisits = sequence.length;
-    const explorationRatio = uniqueNodes / totalVisits;    // Different commentary based on navigation style
-    let commentary = '';
-
-    if (explorationRatio > 0.8) {
-      // Broad exploration
-      commentary = `You navigate with methodical exploration, visiting ${uniqueNodes} distinct locations`;
-    } else if (explorationRatio < 0.4) {
-      // Revisitation heavy
-      commentary = `Your path circles back, revisiting familiar territories ${totalVisits - uniqueNodes} times`;
-    } else if (visitCount > 2) {
-      // Node-specific revisitation
-      commentary = `This location draws you back—your ${visitCount}${this.getOrdinalSuffix(visitCount)} visit`;
-    }
-
-    if (commentary) {
-      transformations.push({
-        type: 'metaComment',
-        selector: 'navigation-pattern',
-        replacement: commentary,
-        commentStyle: 'interlinear',
-        intensity: 1,
-        priority: 'low'
-      });
-    }
-
-    // Add specific pattern recognition
-    const recentPath = sequence.slice(-5);
-    if (recentPath.includes(nodeId)) {
-      const recentVisitIndex = recentPath.lastIndexOf(nodeId);
-      const pathSinceLastVisit = recentPath.slice(recentVisitIndex + 1);
-      
-      if (pathSinceLastVisit.length > 0) {
-        transformations.push({
-          type: 'expand',
-          selector: 'last-paragraph',
-          replacement: `[returning after exploring: ${pathSinceLastVisit.join(' → ')}]`,
-          expandStyle: 'inline',
-          intensity: 1,
-          priority: 'low'
-        });
-      }
-    }
-
-    return transformations;
-  }
-
   /**
    * Creates transformations for detected recursive patterns
    */
@@ -1310,24 +1295,11 @@ export class TransformationService {
    */
   private getDisplacementType(fromLayer: string, toLayer: string): string {
     const layerOrder = { past: 0, present: 1, future: 2 };
-    const fromOrder = layerOrder[fromLayer as keyof typeof layerOrder];
-    const toOrder = layerOrder[toLayer as keyof typeof layerOrder];
+    const fromOrder = layerOrder[fromLayer as keyof typeof layerOrder];    const toOrder = layerOrder[toLayer as keyof typeof layerOrder];
     
     if (fromOrder < toOrder) return `${fromLayer}-to-${toLayer}`;
     if (fromOrder > toOrder) return `${fromLayer}-to-${toLayer}`;
     return 'same-layer';
-  }
-
-  /**
-   * Helper method to get ordinal suffix for numbers
-   */
-  private getOrdinalSuffix(num: number): string {
-    const j = num % 10;
-    const k = num % 100;
-    if (j === 1 && k !== 11) return 'st';
-    if (j === 2 && k !== 12) return 'nd';
-    if (j === 3 && k !== 13) return 'rd';
-    return 'th';
   }
 }
 

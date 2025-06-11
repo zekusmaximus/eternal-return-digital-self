@@ -13,11 +13,16 @@ import {
   NarramorphContent,
   EnhancedNarramorphContent,
   RootState,
-  StrangeAttractor
+  StrangeAttractor,
+  JourneyContext
 } from '../../types';
 import { ReaderState } from '../slices/readerSlice';
 import { transformationEngine } from '../../services/TransformationEngine';
-import { contentVariantService } from '../../services/ContentVariantService';
+import { contentVariantService, ContentSelectionContext } from '../../services/ContentVariantService';
+// Import character bleed service
+import { CharacterBleedService } from '../../services/CharacterBleedService';
+// Import transformation service for journey-based transformations
+import { transformationService } from '../../services/TransformationService';
 
 export interface NodesState { // Add 'export' right here
   data: Record<string, NodeState>;
@@ -194,8 +199,7 @@ const initialNodeData: Node[] = [
     initialConnections: ["human-recognition", "arch-choice", "algo-evolution"],
     contentSource: "human-upload.md",
     coreConcept: "The last human faces the decision about uploading their consciousness, completing or breaking the recursive cycle that connects all three characters.",
-    strangeAttractors: ["continuity-interface", "recursive-loop", "quantum-choice"],
-    transformationThresholds: {
+    strangeAttractors: ["continuity-interface", "recursive-loop", "quantum-choice"],    transformationThresholds: {
       visit: 1,
       revisit: 2,
       complex: 4,
@@ -203,6 +207,22 @@ const initialNodeData: Node[] = [
     },
     isEndpoint: true,
     endpointOrientation: "future"
+  },
+  {
+    id: "character-bleed-test",
+    title: "Character Bleed Test",
+    character: "Archaeologist",
+    temporalValue: 3,
+    initialConnections: ["algo-awakening", "human-discovery"],
+    contentSource: "character-bleed-test.md",
+    coreConcept: "A test node to demonstrate character bleed effects when transitioning between different character perspectives.",
+    strangeAttractors: ["memory-fragment", "identity-pattern"],
+    transformationThresholds: {
+      visit: 1,
+      revisit: 2,
+      complex: 3,
+      fragmented: 5
+    }
   }
 ];
 
@@ -268,8 +288,7 @@ export const loadNodeContent = createAsyncThunk(
 const nodesSlice = createSlice({
   name: 'nodes',
   initialState,
-  reducers: {
-    // Record a visit to a node
+  reducers: {    // Record a visit to a node
     visitNode: (state, action: PayloadAction<string>) => {
       const nodeId = action.payload;
       const node = state.data[nodeId];
@@ -291,7 +310,7 @@ const nodesSlice = createSlice({
           node.currentState = 'complex';
         } else if (node.visitCount >= node.transformationThresholds.revisit) {
           node.currentState = 'revisited';
-        }        // Update currentContent based on enhanced content selection if available
+        }// Update currentContent based on enhanced content selection if available
         if (node.enhancedContent) {
           // For now, use a simplified approach - we'll enhance this with full context later
           // Priority: section variants > visit count variants > base content
@@ -353,7 +372,77 @@ const nodesSlice = createSlice({
       }
     },
 
-    // Evaluate and apply transformations based on reader state
+    // Apply transformations based on character bleed and journey context
+    applyJourneyTransformations: (state, action: PayloadAction<{
+      nodeId: string,
+      readerState: ReaderState
+    }>) => {
+      const { nodeId, readerState } = action.payload;
+      const node = state.data[nodeId];
+
+      if (!node) return;
+
+      try {
+        // Calculate character bleed effects
+        const characterBleedEffects = CharacterBleedService.calculateBleedEffects(node, readerState);
+        
+        // Convert character bleed effects to transformation rules
+        const characterBleedTransformations: TransformationRule[] = characterBleedEffects.map(effect => ({
+          condition: { characterBleed: true },
+          transformations: [effect.transformation]
+        }));
+
+        // Calculate journey-based transformations
+        const journeyTransformations = transformationService.calculateJourneyTransformations(
+          nodeId,
+          readerState
+        );
+
+        // Create journey transformation rules
+        const journeyTransformationRules: TransformationRule[] = journeyTransformations.map(transformation => ({
+          condition: { visitCount: node.visitCount }, // Apply to current visit
+          transformations: [transformation]
+        }));
+
+        // Add all new transformation rules to the node
+        const allNewRules = [...characterBleedTransformations, ...journeyTransformationRules];
+        
+        allNewRules.forEach(rule => {
+          // Only add if not already present
+          const alreadyExists = node.transformations.some(
+            t => JSON.stringify(t.condition) === JSON.stringify(rule.condition) &&
+                 JSON.stringify(t.transformations) === JSON.stringify(rule.transformations)
+          );
+          if (!alreadyExists) {
+            node.transformations.push(rule);
+          }
+        });
+
+        // Update journey context
+        const journeyContext: JourneyContext = {
+          lastVisitedCharacter: readerState.path.detailedVisits && readerState.path.detailedVisits.length > 1
+            ? readerState.path.detailedVisits[readerState.path.detailedVisits.length - 2].character
+            : undefined,
+          journeyPattern: readerState.path.sequence.slice(-5),
+          recursiveAwareness: readerState.path.sequence.length > 0 
+            ? 1 - (new Set(readerState.path.sequence).size / readerState.path.sequence.length)
+            : 0,
+          temporalDisplacement: characterBleedEffects.length > 0
+        };
+
+        node.journeyContext = journeyContext;
+
+        console.log(`[NodesSlice] Applied journey transformations for node ${nodeId}:`, {
+          characterBleedEffects: characterBleedEffects.length,
+          journeyTransformations: journeyTransformations.length,
+          totalTransformations: node.transformations.length,
+          journeyContext
+        });
+
+      } catch (error) {
+        console.error(`[NodesSlice] Error applying journey transformations for node ${nodeId}:`, error);
+      }
+    },
     evaluateTransformations: (state, action: PayloadAction<{
       nodeId: string,
       readerState: RootState['reader']
@@ -427,26 +516,36 @@ const nodesSlice = createSlice({
             node.currentContent = baseContent;
           }
         }
-      }    },
-
-    // Update content variant selection based on journey context
-    updateContentVariant: (state, action: PayloadAction<{ nodeId: string }>) => {
-      const { nodeId } = action.payload;
+      }    },    // Update content variant selection based on journey context
+    updateContentVariant: (state, action: PayloadAction<{ 
+      nodeId: string; 
+      context?: ContentSelectionContext; 
+      selectedContent?: string 
+    }>) => {
+      const { nodeId, context, selectedContent } = action.payload;
       const node = state.data[nodeId];
       
       if (node && node.enhancedContent) {
-        // Create a simplified selection context from current state
-        const context = {
-          visitCount: node.visitCount,
-          lastVisitedCharacter: undefined, // Will be enhanced when we have full reader state access
-          journeyPattern: [],
-          characterSequence: [],
-          attractorsEngaged: {},
-          recursiveAwareness: 0
-        };
-        
-        // Select the appropriate content variant
-        node.currentContent = contentVariantService.selectContentVariant(node.enhancedContent, context);
+        // If selectedContent is provided, use it directly (preferred)
+        if (selectedContent) {
+          node.currentContent = selectedContent;
+        } else {
+          // Fallback to the old simplified selection context
+          const fallbackContext: ContentSelectionContext = {
+            visitCount: node.visitCount,
+            lastVisitedCharacter: undefined, // Will be enhanced when we have full reader state access
+            journeyPattern: [],
+            characterSequence: [],
+            attractorsEngaged: {},
+            recursiveAwareness: 0
+          };
+          
+          // Use provided context if available, otherwise use fallback
+          const selectionContext = context || fallbackContext;
+          
+          // Select the appropriate content variant
+          node.currentContent = contentVariantService.selectContentVariant(node.enhancedContent, selectionContext);
+        }
       }
     },
       // Reset all nodes to initial state (for testing)
@@ -534,6 +633,7 @@ export const {
   revealConnection,
   applyTransformation,
   evaluateTransformations,
+  applyJourneyTransformations,
   updateContentVariant,
   resetNodes
 } = nodesSlice.actions;

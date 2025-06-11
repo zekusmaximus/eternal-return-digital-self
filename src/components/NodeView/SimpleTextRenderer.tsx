@@ -143,6 +143,8 @@ const SimpleTextRenderer: React.FC<SimpleTextRendererProps> = memo(({
   
   // Get reading path from reader state
   const readingPath = useSelector((state: RootState) => state.reader.path);
+    // Track if callbacks have been called to prevent infinite loops
+  const callbacksCalledRef = useRef(false);
   
   // Process transformations in a simpler way
   useEffect(() => {
@@ -167,36 +169,46 @@ const SimpleTextRenderer: React.FC<SimpleTextRendererProps> = memo(({
         setIsLoading(false);
         setIsVisible(true);
         
-        // Signal render completion if callback provided
-        if (onRenderComplete) {
-          console.log(`[SimpleTextRenderer] Render complete for node: ${node.id}`);
-          // Reduced delay to minimize possibility of content flickering
-          setTimeout(onRenderComplete, 10);
-        }
-        
-        // Ensure parent knows content is visible
-        if (onVisibilityChange) {
-          console.log(`[SimpleTextRenderer] Explicitly marking content as visible`);
-          onVisibilityChange(true);
+        // Only call callbacks once per content change to prevent infinite loops
+        if (!callbacksCalledRef.current) {
+          callbacksCalledRef.current = true;
+          
+          // Signal render completion if callback provided
+          if (onRenderComplete) {
+            console.log(`[SimpleTextRenderer] Render complete for node: ${node.id}`);
+            // Reduced delay to minimize possibility of content flickering
+            setTimeout(onRenderComplete, 10);
+          }
+          
+          // Ensure parent knows content is visible
+          if (onVisibilityChange) {
+            console.log(`[SimpleTextRenderer] Explicitly marking content as visible`);
+            onVisibilityChange(true);
+          }
         }
       } catch (error) {
         console.error(`[SimpleTextRenderer] Error processing content:`, error);
         // Still mark as not loading in case of error
         setIsLoading(false);
       }
-    }
-  }, [node?.currentContent, node?.id, originalTransformedContent, appliedTransformations, onRenderComplete, onVisibilityChange]);
+    }  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [node?.currentContent, node?.id, originalTransformedContent]); // Removed appliedTransformations and callbacks to prevent infinite loops
 
+  // Reset callback flag when node changes
+  useEffect(() => {
+    callbacksCalledRef.current = false;
+  }, [node?.id]);
   // Set up visibility observer with simplified reliable detection
   useEffect(() => {
     const currentContentRef = contentRef.current;
+    const currentObserver = observerRef.current;
     if (!currentContentRef) return;
     
     console.log(`[DEBUG] Setting up IntersectionObserver for node: ${node?.id}, current visibility: ${isVisible}`);
     
     // Clean up previous observer
-    if (observerRef.current) {
-      observerRef.current.disconnect();
+    if (currentObserver) {
+      currentObserver.disconnect();
     }
     
     // Force visibility to true initially - BUGFIX
@@ -204,68 +216,24 @@ const SimpleTextRenderer: React.FC<SimpleTextRendererProps> = memo(({
       console.log(`[DEBUG] Forcing initial visibility to true for node: ${node?.id}`);
       setIsVisible(true);
       
-      // Notify parent component if callback provided
-      if (onVisibilityChange) {
+      // Only notify parent component if callback provided and callbacks haven't been called
+      if (onVisibilityChange && !callbacksCalledRef.current) {
         onVisibilityChange(true);
       }
     }
     
-    // Create new observer with simplified reliable settings
-    observerRef.current = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (!entry) return;
-        
-        const isNowVisible = entry.isIntersecting;
-        
-        console.log(`[DEBUG] Intersection detection for node ${node?.id}: ${isNowVisible ? 'visible' : 'not visible'}, intersectionRatio: ${entry.intersectionRatio.toFixed(2)}`);
-        
-        if (isVisible && !isNowVisible) {
-          // Add delay before marking as invisible to prevent flicker
-          console.log(`[DEBUG] Content might be invisible - delaying state change to verify...`);
-          
-          // Never mark as invisible if it's already been visible
-          // This prevents disappearing content once it's been shown
-          /*
-          setTimeout(() => {
-            // Re-check if still connected and invisible
-            if (contentRef.current && !contentRef.current.isConnected) {
-              console.log(`[DEBUG] Content confirmed invisible after delay - updating state`);
-              setIsVisible(false);
-              
-              if (onVisibilityChange) {
-                onVisibilityChange(false);
-              }
-            }
-          }, 250);
-          */
-        } else if (!isVisible && isNowVisible) {
-          // Immediately mark as visible
-          console.log(`[DEBUG] Content is now visible - updating state immediately`);
-          setIsVisible(true);
-          
-          if (onVisibilityChange) {
-            onVisibilityChange(true);
-          }
-        }
-      },
-      {
-        root: null, // Use viewport
-        rootMargin: '0px', // No margin needed for reliability
-        threshold: 0.01 // Even 1% visibility is enough to consider it visible - more lenient
-      }
-    );
-
-    // Start observing
-    observerRef.current.observe(currentContentRef);
-
+    // DISABLE INTERSECTION OBSERVER TO PREVENT INFINITE LOOPS
+    // The intersection observer was causing render loops, so we'll just assume content is always visible
+    console.log(`[DEBUG] Skipping IntersectionObserver setup to prevent infinite loops for node: ${node?.id}`);
+    
     // Cleanup function
     return () => {
       console.log(`[DEBUG] Cleaning up IntersectionObserver for node: ${node?.id}`);
-      observerRef.current?.disconnect();
-    };
-  }, [node?.id, isVisible, onVisibilityChange]);
-
+      if (currentObserver) {
+        currentObserver.disconnect();
+      }    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [node?.id, isVisible]); // Removed onVisibilityChange to prevent infinite loops
   // Set up MutationObserver to prevent style changes that would hide content
   useEffect(() => {
     const currentContentRef = contentRef.current;
@@ -278,73 +246,72 @@ const SimpleTextRenderer: React.FC<SimpleTextRendererProps> = memo(({
       mutationObserverRef.current.disconnect();
     }
     
-    // Create mutation observer to detect and prevent style changes that would hide content
+    // Create mutation observer with reduced frequency to prevent infinite loops
+    let mutationTimeout: number | null = null;
+    
     mutationObserverRef.current = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        if (mutation.type === 'attributes' &&
-            (mutation.attributeName === 'style' ||
-             mutation.attributeName === 'class' ||
-             mutation.attributeName === 'display' ||
-             mutation.attributeName === 'visibility' ||
-             mutation.attributeName === 'opacity')) {
-          
-          const target = mutation.target as HTMLElement;
-          const computedStyle = window.getComputedStyle(target);
-          
-          console.log(`[DEBUG] Style mutation detected on ${target.tagName}#${target.id}.${target.className}:`, {
-            display: computedStyle.display,
-            visibility: computedStyle.visibility,
-            opacity: computedStyle.opacity
-          });
-          
-          // If any change would hide the content, force it back to visible
-          if (computedStyle.display === 'none' ||
-              computedStyle.visibility === 'hidden' ||
-              parseFloat(computedStyle.opacity) === 0) {
+      // Debounce mutations to prevent excessive calls
+      if (mutationTimeout) {
+        clearTimeout(mutationTimeout);
+      }
+      
+      mutationTimeout = window.setTimeout(() => {
+        mutations.forEach((mutation) => {
+          if (mutation.type === 'attributes' &&
+              (mutation.attributeName === 'style' ||
+               mutation.attributeName === 'class' ||
+               mutation.attributeName === 'display' ||
+               mutation.attributeName === 'visibility' ||
+               mutation.attributeName === 'opacity')) {
             
-            console.warn(`[DEBUG] Preventing content from being hidden by style mutation`);
+            const target = mutation.target as HTMLElement;
+            const computedStyle = window.getComputedStyle(target);
             
-            // Force visibility
-            target.style.display = target.style.display === 'none' ? 'block' : target.style.display;
-            target.style.visibility = target.style.visibility === 'hidden' ? 'visible' : target.style.visibility;
-            target.style.opacity = parseFloat(target.style.opacity) === 0 ? '1' : target.style.opacity;
+            console.log(`[DEBUG] Style mutation detected on ${target.tagName}#${target.id}.${target.className}:`, {
+              display: computedStyle.display,
+              visibility: computedStyle.visibility,
+              opacity: computedStyle.opacity
+            });
             
-            // Notify parent if this is the main content element
-            if (target === currentContentRef && onVisibilityChange) {
-              console.log(`[DEBUG] Notifying parent that content is still visible after mutation`);
-              onVisibilityChange(true);
+            // If any change would hide the content, force it back to visible
+            if (computedStyle.display === 'none' ||
+                computedStyle.visibility === 'hidden' ||
+                parseFloat(computedStyle.opacity) === 0) {
+              
+              console.warn(`[DEBUG] Preventing content from being hidden by style mutation`);
+              
+              // Force visibility
+              target.style.display = target.style.display === 'none' ? 'block' : target.style.display;
+              target.style.visibility = target.style.visibility === 'hidden' ? 'visible' : target.style.visibility;
+              target.style.opacity = parseFloat(target.style.opacity) === 0 ? '1' : target.style.opacity;
+              
+              // Only notify parent if this is the main content element and callbacks haven't been called
+              if (target === currentContentRef && onVisibilityChange && !callbacksCalledRef.current) {
+                console.log(`[DEBUG] Notifying parent that content is still visible after mutation`);
+                onVisibilityChange(true);
+              }
             }
           }
-        }
-      });
+        });
+      }, 100); // Debounce mutations by 100ms
     });
     
-    // Observe the content element and its children
+    // Observe the content element and its children with reduced scope
     mutationObserverRef.current.observe(currentContentRef, {
       attributes: true,
       attributeFilter: ['style', 'class'],
-      childList: true,
-      subtree: true,
+      childList: false, // Reduce scope to prevent excessive mutations
+      subtree: false,   // Don't observe subtree to reduce noise
     });
-    
-    // Also observe the parent elements up to 3 levels
-    let parent = currentContentRef.parentElement;
-    for (let i = 0; i < 3 && parent; i++) {
-      if (mutationObserverRef.current) {
-        mutationObserverRef.current.observe(parent, {
-          attributes: true,
-          attributeFilter: ['style', 'class'],
-        });
-      }
-      parent = parent.parentElement;
-    }
-    
-    // Cleanup function
+      // Cleanup function
     return () => {
       console.log(`[DEBUG] Cleaning up MutationObserver for node: ${node?.id}`);
-      mutationObserverRef.current?.disconnect();
-    };
-  }, [node?.id, onVisibilityChange]);
+      if (mutationTimeout) {
+        clearTimeout(mutationTimeout);
+      }
+      mutationObserverRef.current?.disconnect();    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [node?.id]); // Removed onVisibilityChange to prevent infinite loops
   
   // Render empty state if no content
   if (!node || !node.currentContent) {
@@ -391,8 +358,7 @@ const SimpleTextRenderer: React.FC<SimpleTextRendererProps> = memo(({
           />
         </div>
       </SimpleTransformationContainer>
-      
-      {/* Debug information */}
+        {/* Debug information */}
       {process.env.NODE_ENV === 'development' && (
         <div className="simple-renderer-debug">
           <div className="debug-info">
@@ -401,6 +367,17 @@ const SimpleTextRenderer: React.FC<SimpleTextRendererProps> = memo(({
             <span>Renders: {renderCount}</span>
             <span>Path Length: {readingPath.sequence.length}</span>
             <span>Visibility: {isVisible ? 'Visible' : 'Hidden'}</span>
+            <span>Journey Context: {node.journeyContext ? 'Active' : 'None'}</span>
+            {node.journeyContext && (
+              <>
+                <span>Last Character: {node.journeyContext.lastVisitedCharacter || 'None'}</span>
+                <span>Character Bleed: {
+                  appliedTransformations.some(t => 
+                    t.type === 'fragment' || t.type === 'emphasize' && t.intensity && t.intensity > 3
+                  ) ? 'Yes' : 'No'
+                }</span>
+              </>
+            )}
           </div>
         </div>
       )}
