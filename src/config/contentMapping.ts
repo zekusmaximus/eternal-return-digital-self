@@ -4,6 +4,7 @@ export const contentMapping = {
     // Archaeologist nodes
     'arch-discovery': '/src/content/arch-discovery.md',
     'arch-loss': '/src/content/arch-loss.md',
+    'arch-glitch': '/src/content/arch-glitch.md',
     'arch-choice': '/src/content/arch-choice.md',
     
     // Algorithm nodes

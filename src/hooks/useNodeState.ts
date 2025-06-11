@@ -10,7 +10,8 @@ import {
   visitNode,
   revealConnection,
   applyTransformation,
-  evaluateTransformations
+  evaluateTransformations,
+  updateContentVariant
 } from '../store/slices/nodesSlice';
 import {
   navigateToNode,
@@ -19,7 +20,7 @@ import {
   selectNodeRevisitCount
 } from '../store/slices/readerSlice';
 import { setViewMode } from '../store/slices/interfaceSlice';
-import { StrangeAttractor, TransformationRule, TransformationCondition, TextTransformation } from '../types';
+import { StrangeAttractor, TransformationRule, TransformationCondition, TextTransformation, Character } from '../types';
 import { RootState } from '../store/types';
 import { transformationEngine } from '../services/TransformationEngine';
 import { transformationService } from '../services/TransformationService';
@@ -213,8 +214,46 @@ export const useNodeState = (nodeId?: string) => {
       nodeId: targetNodeId,
       readerState
     }));
-    
-  }, [node, targetNodeId, revisitCount, readerState, dispatch, applyNodeTransformation]);
+      }, [node, targetNodeId, revisitCount, readerState, dispatch, applyNodeTransformation]);
+
+  // Update content variants when reader state changes
+  useEffect(() => {
+    if (!node || !targetNodeId || !node.enhancedContent) return;
+
+    // Create selection context and update content variant if needed
+    try {
+      const context = {
+        visitCount: node.visitCount,
+        lastVisitedCharacter: readerState.path.sequence.length > 1 
+          ? allNodes[readerState.path.sequence[readerState.path.sequence.length - 2]]?.character 
+          : undefined,
+        journeyPattern: readerState.path.sequence.slice(-5),
+        characterSequence: readerState.path.sequence
+          .slice(-5)
+          .map(id => allNodes[id]?.character)
+          .filter((char): char is Character => char !== undefined),
+        attractorsEngaged: readerState.path.attractorsEngaged || {},
+        recursiveAwareness: readerState.path.sequence.length > 0 
+          ? 1 - (new Set(readerState.path.sequence).size / readerState.path.sequence.length)
+          : 0
+      };
+
+      // Import dynamically to avoid circular dependencies
+      import('../services/ContentVariantService').then(({ contentVariantService }) => {
+        const selectedContent = contentVariantService.selectContentVariant(
+          node.enhancedContent!,
+          context
+        );
+
+        // Only dispatch if the content actually changed
+        if (selectedContent !== node.currentContent) {
+          dispatch(updateContentVariant({ nodeId: targetNodeId }));
+        }
+      });
+    } catch (error) {
+      console.warn(`[useNodeState] Error updating content variant for node ${targetNodeId}:`, error);
+    }
+  }, [node, targetNodeId, readerState.path, allNodes, dispatch]);
   
   // Evaluate a condition directly using the transformation engine
   const evaluateCondition = useCallback(

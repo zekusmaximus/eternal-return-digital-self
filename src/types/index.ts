@@ -156,10 +156,28 @@ export interface Node {
 }
 
 /**
+ * Content variants for different journey states and visit counts
+ */
+export interface ContentVariant {
+  visitCount?: number; // Visit-count based variants (legacy support)
+  sectionName?: string; // Named section variants (e.g., 'after-algorithm', 'recursive-awareness')
+  content: string;
+}
+
+/**
  * Node instance state - combines static node data with reader-specific state
  */
 export interface NarramorphContent {
-  [visitCount: number]: string;
+  [visitCount: number]: string; // Legacy visit-count based content
+}
+
+/**
+ * Enhanced content structure supporting both visit-count and section-based variants
+ */
+export interface EnhancedNarramorphContent {
+  base: string; // Default content
+  visitCountVariants: { [visitCount: number]: string }; // Visit-count based variants
+  sectionVariants: { [sectionName: string]: string }; // Named section variants
 }
 
 /**
@@ -177,7 +195,8 @@ export interface NodeState extends Node {
   currentState: NodeVisualState;
   revealedConnections: string[]; // All available connections (initial + revealed)
   transformations: TransformationRule[]; // Applied transformations
-  content: NarramorphContent | null; // Holds all content versions
+  content: NarramorphContent | null; // Legacy content structure
+  enhancedContent: EnhancedNarramorphContent | null; // New enhanced content structure
   currentContent: string | null; // The currently displayed content
   journeyContext?: JourneyContext; // Optional journey context for character bleed effects
 }

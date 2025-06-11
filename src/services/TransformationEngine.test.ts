@@ -69,12 +69,12 @@ const mockCurrentNodeState: NodeState = {
     revisit: 2,
     complex: 3,
     fragmented: 5
-  },
-  visitCount: 1,
+  },  visitCount: 1,
   currentState: 'visited',
   revealedConnections: [],
   transformations: [],
   content: null,
+  enhancedContent: null,
   currentContent: null
 };
 

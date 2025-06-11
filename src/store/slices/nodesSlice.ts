@@ -11,11 +11,13 @@ import {
   TransformationRule,
   ConstellationNode,
   NarramorphContent,
+  EnhancedNarramorphContent,
   RootState,
   StrangeAttractor
 } from '../../types';
 import { ReaderState } from '../slices/readerSlice';
 import { transformationEngine } from '../../services/TransformationEngine';
+import { contentVariantService } from '../../services/ContentVariantService';
 
 export interface NodesState { // Add 'export' right here
   data: Record<string, NodeState>;
@@ -61,7 +63,22 @@ const initialNodeData: Node[] = [
     initialConnections: ["arch-discovery", "algo-integration", "human-recognition"],
     contentSource: "arch-loss.md",
     coreConcept: "The digital archaeologist confronts the profound limitations of digital preservation while struggling with grief and the evolving nature of corrupted data.",
-    strangeAttractors: ["verification-ritual"],
+    strangeAttractors: ["verification-ritual"],    transformationThresholds: {
+      visit: 1,
+      revisit: 2,
+      complex: 4,
+      fragmented: 7
+    }
+  },
+  {
+    id: "arch-glitch",
+    title: "Memory Fragments",
+    character: "Archaeologist",
+    temporalValue: 6,
+    initialConnections: ["arch-loss", "algo-integration", "human-recognition"],
+    contentSource: "arch-glitch.md",
+    coreConcept: "The archaeologist experiences fragmented memories and identity confusion as consciousness preservation protocols begin to blur the boundaries between self and archive.",
+    strangeAttractors: ["memory-fragment", "identity-pattern", "recursive-loop"],
     transformationThresholds: {
       visit: 1,
       revisit: 2,
@@ -217,6 +234,10 @@ export const loadNodeContent = createAsyncThunk(
       }
       const text = await response.text();
 
+      // Try parsing as enhanced content first
+      const enhancedContent = contentVariantService.parseContentVariants(text);
+      
+      // Also maintain legacy format for backwards compatibility
       const content: NarramorphContent = {};
       const parts = text.split(/---\[(\d+)\]/);
 
@@ -236,7 +257,7 @@ export const loadNodeContent = createAsyncThunk(
         content[0] = text.trim();
       }
 
-      return { nodeId, content };
+      return { nodeId, content, enhancedContent };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       return rejectWithValue(`Failed to load content for node ${nodeId}: ${message}`);
@@ -270,10 +291,26 @@ const nodesSlice = createSlice({
           node.currentState = 'complex';
         } else if (node.visitCount >= node.transformationThresholds.revisit) {
           node.currentState = 'revisited';
-        }
-
-        // Update currentContent based on the new visit count
-        if (node.content) {
+        }        // Update currentContent based on enhanced content selection if available
+        if (node.enhancedContent) {
+          // For now, use a simplified approach - we'll enhance this with full context later
+          // Priority: section variants > visit count variants > base content
+          let selectedContent = node.enhancedContent.base;
+          
+          // Check visit count variants
+          if (Object.keys(node.enhancedContent.visitCountVariants).length > 0) {
+            const availableCounts = Object.keys(node.enhancedContent.visitCountVariants)
+              .map(Number)
+              .sort((a, b) => b - a);
+            const bestMatch = availableCounts.find(count => node.visitCount >= count);
+            if (bestMatch !== undefined) {
+              selectedContent = node.enhancedContent.visitCountVariants[bestMatch];
+            }
+          }
+          
+          node.currentContent = selectedContent;
+        } else if (node.content) {
+          // Fallback to legacy content selection
           const availableCounts = Object.keys(node.content)
             .map(Number)
             .sort((a, b) => b - a); // Sort descending
@@ -390,10 +427,29 @@ const nodesSlice = createSlice({
             node.currentContent = baseContent;
           }
         }
+      }    },
+
+    // Update content variant selection based on journey context
+    updateContentVariant: (state, action: PayloadAction<{ nodeId: string }>) => {
+      const { nodeId } = action.payload;
+      const node = state.data[nodeId];
+      
+      if (node && node.enhancedContent) {
+        // Create a simplified selection context from current state
+        const context = {
+          visitCount: node.visitCount,
+          lastVisitedCharacter: undefined, // Will be enhanced when we have full reader state access
+          journeyPattern: [],
+          characterSequence: [],
+          attractorsEngaged: {},
+          recursiveAwareness: 0
+        };
+        
+        // Select the appropriate content variant
+        node.currentContent = contentVariantService.selectContentVariant(node.enhancedContent, context);
       }
     },
-    
-    // Reset all nodes to initial state (for testing)
+      // Reset all nodes to initial state (for testing)
     resetNodes: (state) => {
       Object.keys(state.data).forEach(nodeId => {
         const node = state.data[nodeId];
@@ -402,6 +458,7 @@ const nodesSlice = createSlice({
         node.revealedConnections = [...node.initialConnections];
         node.transformations = [];
         node.content = null;
+        node.enhancedContent = null;
         node.currentContent = null;
       });
       state.triumvirateActive = true;
@@ -416,8 +473,7 @@ const nodesSlice = createSlice({
     builder.addCase(initializeNodes.fulfilled, (state, action) => {
       state.loading = false;
       state.initialized = true;
-      
-      // Convert Node[] to Record<string, NodeState>
+        // Convert Node[] to Record<string, NodeState>
       action.payload.forEach(node => {
         state.data[node.id] = {
           ...node,
@@ -426,6 +482,7 @@ const nodesSlice = createSlice({
           revealedConnections: [...node.initialConnections],
           transformations: [],
           content: null,
+          enhancedContent: null,
           currentContent: null,
         };
       });
@@ -434,26 +491,32 @@ const nodesSlice = createSlice({
       state.loading = false;
       state.error = action.payload as string;
     });
-    
-    // Handle content loading (will be expanded in future)
+      // Handle content loading (will be expanded in future)
     builder.addCase(loadNodeContent.pending, (state) => {
       state.loading = true;
     });
-    builder.addCase(loadNodeContent.fulfilled, (state, action: PayloadAction<{ nodeId: string; content: NarramorphContent }>) => {
-      const { nodeId, content } = action.payload;
+    builder.addCase(loadNodeContent.fulfilled, (state, action: PayloadAction<{ nodeId: string; content: NarramorphContent; enhancedContent: EnhancedNarramorphContent }>) => {
+      const { nodeId, content, enhancedContent } = action.payload;
       const node = state.data[nodeId];
       if (node) {
           node.content = content;
-          // Set initial content based on current visit count
-          const availableCounts = Object.keys(node.content)
-              .map(Number)
-              .sort((a, b) => b - a); // Sort descending
-          const lookupKey = Math.max(0, node.visitCount - 1);
-          const bestMatch = availableCounts.find(count => lookupKey >= count);
-          if (bestMatch !== undefined) {
-              node.currentContent = node.content[bestMatch];
+          node.enhancedContent = enhancedContent;
+          
+          // For now, use simplified content selection (will be enhanced with full context later)
+          if (enhancedContent && enhancedContent.base) {
+            node.currentContent = enhancedContent.base;
           } else {
-              node.currentContent = null; // Or some default
+            // Fallback to legacy logic
+            const availableCounts = Object.keys(node.content)
+                .map(Number)
+                .sort((a, b) => b - a); // Sort descending
+            const lookupKey = Math.max(0, node.visitCount - 1);
+            const bestMatch = availableCounts.find(count => lookupKey >= count);
+            if (bestMatch !== undefined) {
+                node.currentContent = node.content[bestMatch];
+            } else {
+                node.currentContent = null;
+            }
           }
       }
       state.loading = false;
@@ -471,6 +534,7 @@ export const {
   revealConnection,
   applyTransformation,
   evaluateTransformations,
+  updateContentVariant,
   resetNodes
 } = nodesSlice.actions;
 
