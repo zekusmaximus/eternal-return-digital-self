@@ -22,6 +22,7 @@ import {
 } from '../types';
 import { ReaderState } from '../store/slices/readerSlice';
 import { pathAnalyzer } from './PathAnalyzer';
+import { CharacterBleedEffect } from './CharacterBleedService';
 
 // LRU Cache implementation for memoization
 class LRUCache<K, V> {
@@ -1147,12 +1148,125 @@ export class TransformationEngine {
       
       // Cache the result in the batched cache
       this.batchedTransformationCache.put(batchCacheKey, result);
-      
-      return result;
+        return result;
     } catch (error) {
       console.error('Error applying transformations:', error);
       return content; // Return original content on error
     }
+  }
+
+  /**
+   * Applies character bleed transformations to content based on character transition effects
+   * @param content The content to transform
+   * @param nodeState The current node state 
+   * @param readerState The current reader state
+   * @param characterBleedEffects Array of character bleed effects from CharacterBleedService
+   * @returns Transformed content with character bleed effects applied
+   */
+  applyCharacterBleedTransformations(
+    content: string,
+    nodeState: NodeState,
+    readerState: ReaderState,
+    characterBleedEffects: CharacterBleedEffect[]
+  ): string {
+    // Quick validation
+    if (!content) {
+      console.warn('[TransformationEngine] applyCharacterBleedTransformations: Content is empty');
+      return '';
+    }
+
+    if (!Array.isArray(characterBleedEffects) || characterBleedEffects.length === 0) {
+      console.log('[TransformationEngine] applyCharacterBleedTransformations: No character bleed effects to apply');
+      return content;
+    }
+
+    try {
+      console.log(`[TransformationEngine] Applying ${characterBleedEffects.length} character bleed transformations to node ${nodeState.id}`);      // Extract TextTransformation objects from CharacterBleedEffect array
+      // and enhance them with proper priority ordering
+      const bleedTransformations: TextTransformation[] = characterBleedEffects.map((effect, index) => {
+        const transformation = { ...effect.transformation };
+        
+        // Set high priority for character bleed effects to ensure they're applied first
+        if (!transformation.priority) {
+          transformation.priority = 'high';
+        }
+
+        console.log(`[TransformationEngine] Character bleed transformation ${index + 1}: ${effect.type} on "${effect.selector.substring(0, 30)}..." (${effect.sourceCharacter} → ${effect.targetCharacter})`);
+
+        return transformation;
+      });
+
+      // Generate cache key for character bleed transformations
+      const bleedCacheKey = this.getCharacterBleedCacheKey(
+        content, 
+        nodeState, 
+        readerState, 
+        characterBleedEffects
+      );
+
+      // Check cache first
+      const cachedResult = this.batchedTransformationCache.get(bleedCacheKey);
+      if (cachedResult !== undefined) {
+        this.stats.batchedCacheHits++;
+        console.log('[TransformationEngine] Character bleed transformations retrieved from cache');
+        return cachedResult;
+      }
+
+      // Apply transformations using existing pipeline with enhanced error handling
+      const transformedContent = this.applyTransformations(content, bleedTransformations);
+
+      // Cache the result
+      this.batchedTransformationCache.put(bleedCacheKey, transformedContent);
+
+      console.log(`[TransformationEngine] Successfully applied character bleed transformations. Content length: ${content.length} → ${transformedContent.length}`);
+
+      return transformedContent;
+
+    } catch (error) {
+      console.error('[TransformationEngine] Error applying character bleed transformations:', error);
+      console.error('[TransformationEngine] Effects that failed:', characterBleedEffects.map(e => ({
+        type: e.type,
+        selector: e.selector.substring(0, 30),
+        sourceCharacter: e.sourceCharacter,
+        targetCharacter: e.targetCharacter
+      })));
+      
+      // Return original content on error to prevent breaking the application
+      return content;
+    }
+  }
+  /**
+   * Generates a cache key specifically for character bleed transformations
+   * @param content The content being transformed
+   * @param nodeState The current node state
+   * @param readerState The current reader state  
+   * @param characterBleedEffects The character bleed effects being applied
+   * @returns Cache key string
+   */
+  private getCharacterBleedCacheKey(
+    content: string,
+    nodeState: NodeState,
+    readerState: ReaderState,
+    characterBleedEffects: CharacterBleedEffect[]
+  ): string {
+    // Create a compact cache key that captures the essential elements
+    const contentHash = content.substring(0, 50); // First 50 chars of content
+    const nodeKey = `${nodeState.id}:${nodeState.character}:${nodeState.visitCount}`;
+    
+    // Get the last visited character to capture the transition
+    const detailedVisits = readerState.path.detailedVisits || [];
+    const lastVisitedCharacter = detailedVisits.length >= 2
+      ? detailedVisits[detailedVisits.length - 2].character
+      : 'none';
+    
+    // Create a hash of the bleed effects
+    const effectsHash = characterBleedEffects
+      .map(e => `${e.type}:${e.selector.substring(0, 10)}:${e.sourceCharacter}:${e.targetCharacter}:${e.intensity}`)
+      .join('|');
+    
+    const transitionKey = `${lastVisitedCharacter}→${nodeState.character}`;
+    
+    return `bleed:${contentHash}:${nodeKey}:${transitionKey}:${effectsHash}:${this.lastModificationTime}`;
   }
   
   /**
