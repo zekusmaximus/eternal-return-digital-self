@@ -55,6 +55,85 @@ export interface PatternBasedCondition {
 }
 
 /**
+ * Represents a recursive navigation pattern detected in the reader's journey
+ */
+export interface RecursivePattern {
+  sequence: string[]; // The repeated sequence of node IDs
+  length: number; // Length of the sequence (2-4)
+  occurrences: number; // How many times this sequence appears
+  lastOccurrenceIndex: number; // Index of the last occurrence in the path
+  strength: number; // Pattern strength (0-1)
+  temporalSpread: number; // How spread out temporally the occurrences are (0-1)
+}
+
+/**
+ * Represents character focus intensity metrics
+ */
+export interface CharacterFocusIntensity {
+  character: Character;
+  visitRatio: number; // Percentage of total visits to this character's nodes
+  intensity: number; // Focus intensity score (0-1)
+  consecutiveVisits: number; // Longest streak of consecutive visits
+  avgTimeBetweenVisits: number; // Average gap between visits to this character
+  temporalSpread: TemporalLabel[]; // Which temporal layers this character's visits span
+}
+
+/**
+ * Represents a strange attractor that frequently draws the reader back
+ */
+export interface StrangeAttractorNode {
+  nodeId: string;
+  returnFrequency: number; // How often the reader returns (0-1)
+  totalReturns: number; // Number of times returned to
+  averageGapBetweenReturns: number; // Average nodes visited between returns
+  magneticStrength: number; // Overall attractiveness metric (0-1)
+  attractorThemes: StrangeAttractor[]; // Which thematic attractors this node contains
+  lastReturnIndex: number; // Index of most recent return
+}
+
+/**
+ * Represents temporal jumping behavior patterns
+ */
+export interface TemporalJumpingPattern {
+  totalJumps: number; // Total number of temporal layer transitions
+  jumpFrequency: number; // Jumps per visit ratio
+  preferredJumpDirection: 'forward' | 'backward' | 'mixed'; // Temporal preference
+  jumpDistances: number[]; // Distribution of temporal distances (1-8)
+  averageJumpDistance: number; // Average distance of temporal jumps
+  maxJumpDistance: number; // Largest temporal jump made
+  temporalAnchoring: Record<TemporalLabel, number>; // Time spent in each layer
+  volatility: number; // How erratic the temporal movement is (0-1)
+}
+
+/**
+ * Represents a unique fingerprint of the reader's navigation style
+ */
+export interface JourneyFingerprint {
+  id: string; // Unique identifier for this fingerprint
+  explorationStyle: 'linear' | 'recursive' | 'wandering' | 'focused' | 'chaotic';
+  characterAffinity: Character[]; // Ranked list of character preferences
+  temporalPreference: 'past-oriented' | 'present-focused' | 'future-seeking' | 'time-fluid';
+  narrativeApproach: 'systematic' | 'intuitive' | 'thematic' | 'experimental';
+  
+  // Quantitative metrics
+  recursiveIndex: number; // How recursive the navigation is (0-1)
+  focusIndex: number; // How focused vs scattered (0-1)
+  velocityIndex: number; // How quickly they move through content (0-1)
+  complexityIndex: number; // How complex their path patterns are (0-1)
+  
+  // Pattern signatures
+  dominantPatternLengths: number[]; // Most common sequence lengths
+  characterTransitionMatrix: Record<Character, Record<Character, number>>; // Character switching patterns
+  temporalJumpSignature: number[]; // Characteristic temporal movement pattern
+  attractorEngagementProfile: Record<StrangeAttractor, number>; // Thematic engagement fingerprint
+  
+  // Metadata
+  pathLength: number; // Total nodes visited
+  uniqueNodesVisited: number; // Number of distinct nodes
+  generatedAt: number; // Index in path when fingerprint was generated
+}
+
+/**
  * Service class for analyzing reader path patterns
  */
 export class PathAnalyzer {
@@ -639,6 +718,481 @@ export class PathAnalyzer {
       });
     
     return conditions;
+  }
+  /**
+   * Detects repeated navigation sequences of length 2-4
+   * @param readerState Current reader state with path information
+   * @param nodes Map of node IDs to node states (for future extensibility)
+   * @returns Array of detected recursive patterns
+   */  analyzeRecursivePatterns(
+    readerState: ReaderState,
+    nodes: Record<string, NodeState>
+  ): RecursivePattern[] {
+    const { sequence } = readerState.path;
+    const patterns: RecursivePattern[] = [];
+    
+    // Note: nodes parameter reserved for future enhancement of pattern analysis
+    // with node-specific metadata (character, temporal, attractor themes)
+    
+    if (sequence.length < 4) {
+      return patterns; // Need at least 4 nodes to detect patterns of length 2
+    }
+    
+    // Check for patterns of length 2-4
+    for (let patternLength = 2; patternLength <= 4; patternLength++) {
+      const foundPatterns = new Map<string, RecursivePattern>();
+      
+      // Extract all possible sequences of this length
+      for (let i = 0; i <= sequence.length - patternLength; i++) {
+        const subSequence = sequence.slice(i, i + patternLength);
+        const patternKey = subSequence.join('->');
+        
+        if (!foundPatterns.has(patternKey)) {
+          foundPatterns.set(patternKey, {
+            sequence: subSequence,
+            length: patternLength,
+            occurrences: 0,
+            lastOccurrenceIndex: i,
+            strength: 0,
+            temporalSpread: 0
+          });
+        }
+        
+        const pattern = foundPatterns.get(patternKey)!;
+        pattern.occurrences++;
+        pattern.lastOccurrenceIndex = Math.max(pattern.lastOccurrenceIndex, i);
+      }
+      
+      // Filter patterns that occur at least twice and calculate metrics
+      foundPatterns.forEach(pattern => {
+        if (pattern.occurrences >= 2) {
+          // Calculate pattern strength based on frequency and recency
+          const frequencyFactor = Math.min(1, pattern.occurrences / (sequence.length / patternLength));
+          const recencyFactor = 1 - ((sequence.length - pattern.lastOccurrenceIndex) / sequence.length);
+          pattern.strength = (frequencyFactor * 0.7) + (recencyFactor * 0.3);
+            // Calculate temporal spread by checking how spread out the occurrences are
+          const occurrenceIndices: number[] = [];
+          for (let i = 0; i <= sequence.length - patternLength; i++) {
+            const subSeq = sequence.slice(i, i + patternLength);
+            if (subSeq.every((nodeId, idx) => nodeId === pattern.sequence[idx])) {
+              occurrenceIndices.push(i);
+            }
+          }
+          
+          if (occurrenceIndices.length > 1) {
+            const gaps = occurrenceIndices.slice(1).map((idx, i) => idx - occurrenceIndices[i]);
+            const avgGap = gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length;
+            const maxPossibleGap = sequence.length / occurrenceIndices.length;
+            pattern.temporalSpread = Math.min(1, avgGap / maxPossibleGap);
+          }
+          
+          // Enhance pattern with node metadata for richer analysis
+          const patternNodes = pattern.sequence.map(nodeId => nodes[nodeId]).filter(Boolean);
+          if (patternNodes.length > 0) {
+            // Future enhancement: Could analyze character transitions, temporal jumps, attractor themes within pattern
+            // For now, ensure nodes parameter is used to avoid warnings
+            const hasValidNodes = patternNodes.length === pattern.sequence.length;
+            if (!hasValidNodes) {
+              console.warn(`Pattern contains invalid node references: ${pattern.sequence}`);
+            }
+          }
+          
+          patterns.push(pattern);
+        }
+      });
+    }
+    
+    // Sort by strength (strongest patterns first)
+    return patterns.sort((a, b) => b.strength - a.strength);
+  }
+  /**
+   * Measures how concentrated visits are on specific characters
+   * @param readerState Current reader state with path information
+   * @param nodes Map of node IDs to node states
+   * @returns Array of character focus intensity metrics
+   */
+  calculateCharacterFocusIntensity(
+    readerState: ReaderState,
+    nodes: Record<string, NodeState>
+  ): CharacterFocusIntensity[] {
+    const { sequence, characterFocus = {} } = readerState.path;
+    const intensities: CharacterFocusIntensity[] = [];
+    
+    if (sequence.length === 0) {
+      return intensities;
+    }
+    
+    // Calculate character visit patterns
+    const characterSequence: Character[] = sequence.map(nodeId => nodes[nodeId]?.character).filter((char): char is Character => Boolean(char));
+    const totalVisits = characterSequence.length;
+    
+    Object.keys(characterFocus).forEach(char => {
+      const character = char as Character;
+      const visitCount = (characterFocus as Record<Character, number>)[character];
+      
+      if (visitCount > 0) {
+        // Calculate visit ratio
+        const visitRatio = visitCount / totalVisits;
+        
+        // Find longest consecutive streak
+        let longestStreak = 0;
+        let currentStreak = 0;
+        
+        characterSequence.forEach(visitedChar => {
+          if (visitedChar === character) {
+            currentStreak++;
+            longestStreak = Math.max(longestStreak, currentStreak);
+          } else {
+            currentStreak = 0;
+          }
+        });
+        
+        // Calculate average time between visits
+        const characterVisitIndices = characterSequence
+          .map((char, idx) => char === character ? idx : -1)
+          .filter(idx => idx !== -1);
+        
+        let avgTimeBetweenVisits = 0;
+        if (characterVisitIndices.length > 1) {
+          const gaps = characterVisitIndices.slice(1).map((idx, i) => idx - characterVisitIndices[i]);
+          avgTimeBetweenVisits = gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length;
+        }
+        
+        // Determine temporal spread
+        const characterNodeIds = Object.keys(nodes).filter(nodeId => nodes[nodeId].character === character);
+        const visitedCharacterNodes = sequence.filter(nodeId => characterNodeIds.includes(nodeId));
+        const temporalSpread = [...new Set(visitedCharacterNodes.map(nodeId => {
+          const temporalValue = nodes[nodeId].temporalValue;
+          if (temporalValue <= 3) return 'past';
+          if (temporalValue <= 6) return 'present';
+          return 'future';
+        }))];
+        
+        // Calculate intensity (combination of visit ratio, streak length, and temporal spread)
+        const visitRatioFactor = Math.min(1, visitRatio * 2); // Cap at 1, but weight heavily
+        const streakFactor = Math.min(1, longestStreak / 5); // Normalize streak to 5 visits
+        const spreadFactor = temporalSpread.length / 3; // 0-1 based on temporal coverage
+        
+        const intensity = (visitRatioFactor * 0.5) + (streakFactor * 0.3) + (spreadFactor * 0.2);
+        
+        intensities.push({
+          character,
+          visitRatio,
+          intensity,
+          consecutiveVisits: longestStreak,
+          avgTimeBetweenVisits,
+          temporalSpread: temporalSpread as TemporalLabel[]
+        });
+      }
+    });
+    
+    // Sort by intensity (highest first)
+    return intensities.sort((a, b) => b.intensity - a.intensity);
+  }
+
+  /**
+   * Identifies nodes the reader returns to frequently
+   * @param readerState Current reader state with path information
+   * @param nodes Map of node IDs to node states
+   * @returns Array of strange attractor nodes
+   */
+  detectStrangeAttractors(
+    readerState: ReaderState,
+    nodes: Record<string, NodeState>
+  ): StrangeAttractorNode[] {
+    const { sequence, revisitPatterns } = readerState.path;
+    const attractors: StrangeAttractorNode[] = [];
+    
+    if (sequence.length < 3) {
+      return attractors; // Need enough visits to detect return patterns
+    }
+    
+    // Analyze each node that has been revisited
+    Object.entries(revisitPatterns).forEach(([nodeId, totalVisits]) => {
+      if (totalVisits > 1) { // Node has been returned to
+        const returnCount = totalVisits - 1; // Subtract initial visit
+        
+        // Find all visit indices for this node
+        const visitIndices = sequence
+          .map((id, idx) => id === nodeId ? idx : -1)
+          .filter(idx => idx !== -1);
+        
+        if (visitIndices.length > 1) {
+          // Calculate return frequency (returns per total visits)
+          const returnFrequency = returnCount / sequence.length;
+          
+          // Calculate average gap between returns
+          const gaps = visitIndices.slice(1).map((idx, i) => idx - visitIndices[i]);
+          const averageGap = gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length;
+          
+          // Calculate magnetic strength based on multiple factors
+          const frequencyFactor = Math.min(1, returnFrequency * 10); // Weight frequency highly
+          const consistencyFactor = 1 - (Math.max(...gaps) - Math.min(...gaps)) / Math.max(...gaps); // How consistent are the gaps
+          const recencyFactor = 1 - ((sequence.length - Math.max(...visitIndices)) / sequence.length); // How recent was the last return
+          
+          const magneticStrength = (frequencyFactor * 0.5) + (consistencyFactor * 0.3) + (recencyFactor * 0.2);
+          
+          // Get node's strange attractors
+          const nodeData = nodes[nodeId];
+          const attractorThemes = nodeData ? nodeData.strangeAttractors : [];
+          
+          attractors.push({
+            nodeId,
+            returnFrequency,
+            totalReturns: returnCount,
+            averageGapBetweenReturns: averageGap,
+            magneticStrength,
+            attractorThemes,
+            lastReturnIndex: Math.max(...visitIndices)
+          });
+        }
+      }
+    });
+    
+    // Sort by magnetic strength (strongest attractors first)
+    return attractors.sort((a, b) => b.magneticStrength - a.magneticStrength);
+  }
+
+  /**
+   * Tracks movement between temporal layers
+   * @param readerState Current reader state with path information
+   * @param nodes Map of node IDs to node states
+   * @returns Temporal jumping pattern analysis
+   */
+  analyzeTemporalJumping(
+    readerState: ReaderState,
+    nodes: Record<string, NodeState>
+  ): TemporalJumpingPattern {
+    const { sequence, temporalLayerFocus = {} } = readerState.path;
+    
+    if (sequence.length < 2) {
+      return {
+        totalJumps: 0,
+        jumpFrequency: 0,
+        preferredJumpDirection: 'mixed',
+        jumpDistances: [],
+        averageJumpDistance: 0,
+        maxJumpDistance: 0,
+        temporalAnchoring: { past: 0, present: 0, future: 0 },
+        volatility: 0
+      };
+    }
+    
+    // Build temporal sequence
+    const temporalSequence = sequence.map(nodeId => {
+      const node = nodes[nodeId];
+      return node ? node.temporalValue : 0;
+    }).filter(val => val > 0);
+    
+    // Calculate jumps
+    const jumps: number[] = [];
+    const jumpDirections: ('forward' | 'backward')[] = [];
+    
+    for (let i = 1; i < temporalSequence.length; i++) {
+      const prevTemporal = temporalSequence[i - 1];
+      const currTemporal = temporalSequence[i];
+      const jumpDistance = Math.abs(currTemporal - prevTemporal);
+      
+      if (jumpDistance > 0) {
+        jumps.push(jumpDistance);
+        jumpDirections.push(currTemporal > prevTemporal ? 'forward' : 'backward');
+      }
+    }
+    
+    // Calculate metrics
+    const totalJumps = jumps.length;
+    const jumpFrequency = totalJumps / sequence.length;
+    const averageJumpDistance = jumps.length > 0 ? jumps.reduce((sum, dist) => sum + dist, 0) / jumps.length : 0;
+    const maxJumpDistance = jumps.length > 0 ? Math.max(...jumps) : 0;
+    
+    // Determine preferred direction
+    const forwardJumps = jumpDirections.filter(dir => dir === 'forward').length;
+    const backwardJumps = jumpDirections.filter(dir => dir === 'backward').length;
+    let preferredJumpDirection: 'forward' | 'backward' | 'mixed' = 'mixed';
+    
+    if (forwardJumps > backwardJumps * 1.5) {
+      preferredJumpDirection = 'forward';
+    } else if (backwardJumps > forwardJumps * 1.5) {
+      preferredJumpDirection = 'backward';
+    }
+      // Calculate temporal anchoring (normalize focus values)
+    const temporalLayerFocusTyped = temporalLayerFocus as Record<TemporalLabel, number>;
+    const totalTemporalVisits = Object.values(temporalLayerFocusTyped).reduce((sum: number, count: number) => sum + count, 0);
+    const temporalAnchoring = {
+      past: totalTemporalVisits > 0 ? (temporalLayerFocusTyped.past || 0) / totalTemporalVisits : 0,
+      present: totalTemporalVisits > 0 ? (temporalLayerFocusTyped.present || 0) / totalTemporalVisits : 0,
+      future: totalTemporalVisits > 0 ? (temporalLayerFocusTyped.future || 0) / totalTemporalVisits : 0
+    };
+    
+    // Calculate volatility (how erratic the temporal movement is)
+    let volatility = 0;
+    if (jumps.length > 1) {
+      const jumpVariance = jumps.reduce((sum, jump) => {
+        const deviation = jump - averageJumpDistance;
+        return sum + (deviation * deviation);
+      }, 0) / jumps.length;
+      volatility = Math.min(1, Math.sqrt(jumpVariance) / 4); // Normalize to 0-1 scale
+    }
+    
+    return {
+      totalJumps,
+      jumpFrequency,
+      preferredJumpDirection,
+      jumpDistances: jumps,
+      averageJumpDistance,
+      maxJumpDistance,
+      temporalAnchoring,
+      volatility
+    };
+  }
+  /**
+   * Creates a unique signature for the reader's navigation style
+   * @param readerState Current reader state with path information
+   * @param nodes Map of node IDs to node states
+   * @returns Journey fingerprint with comprehensive navigation metrics
+   */
+  generateJourneyFingerprint(
+    readerState: ReaderState,
+    nodes: Record<string, NodeState>
+  ): JourneyFingerprint {
+    const { sequence, attractorsEngaged = {} } = readerState.path;
+    
+    // Get all analysis results
+    const recursivePatterns = this.analyzeRecursivePatterns(readerState, nodes);
+    const characterIntensities = this.calculateCharacterFocusIntensity(readerState, nodes);
+    const strangeAttractors = this.detectStrangeAttractors(readerState, nodes);
+    const temporalJumping = this.analyzeTemporalJumping(readerState, nodes);
+    
+    // Calculate core indices
+    const recursiveIndex = recursivePatterns.length > 0 
+      ? recursivePatterns.reduce((sum, pattern) => sum + pattern.strength, 0) / recursivePatterns.length 
+      : 0;
+    
+    const focusIndex = characterIntensities.length > 0
+      ? Math.max(...characterIntensities.map(ci => ci.intensity))
+      : 0;
+    
+    const velocityIndex = Math.min(1, temporalJumping.jumpFrequency * 2); // Normalize jump frequency
+    
+    const complexityIndex = Math.min(1, (
+      (recursiveIndex * 0.3) +
+      (temporalJumping.volatility * 0.3) +
+      (strangeAttractors.length / 10 * 0.4) // Normalize attractor count
+    ));
+    
+    // Determine exploration style
+    let explorationStyle: 'linear' | 'recursive' | 'wandering' | 'focused' | 'chaotic' = 'linear';
+    
+    if (complexityIndex > 0.7) {
+      explorationStyle = 'chaotic';
+    } else if (recursiveIndex > 0.6) {
+      explorationStyle = 'recursive';
+    } else if (focusIndex > 0.7) {
+      explorationStyle = 'focused';
+    } else if (temporalJumping.volatility > 0.5) {
+      explorationStyle = 'wandering';
+    }
+    
+    // Determine character affinity (ranked)
+    const characterAffinity = characterIntensities
+      .sort((a, b) => b.intensity - a.intensity)
+      .map(ci => ci.character);
+    
+    // Determine temporal preference
+    const { temporalAnchoring } = temporalJumping;
+    let temporalPreference: 'past-oriented' | 'present-focused' | 'future-seeking' | 'time-fluid' = 'time-fluid';
+    
+    if (temporalAnchoring.past > 0.5) {
+      temporalPreference = 'past-oriented';
+    } else if (temporalAnchoring.present > 0.5) {
+      temporalPreference = 'present-focused';
+    } else if (temporalAnchoring.future > 0.5) {
+      temporalPreference = 'future-seeking';
+    }
+    
+    // Determine narrative approach
+    let narrativeApproach: 'systematic' | 'intuitive' | 'thematic' | 'experimental' = 'intuitive';
+    
+    const attractorsEngagedTyped = attractorsEngaged as Record<StrangeAttractor, number>;
+    const attractorEngagementCount = Object.keys(attractorsEngagedTyped).length;
+    const totalAttractorEngagements = Object.values(attractorsEngagedTyped).reduce((sum: number, count: number) => sum + count, 0);
+    
+    if (explorationStyle === 'linear' && temporalJumping.volatility < 0.3) {
+      narrativeApproach = 'systematic';
+    } else if (attractorEngagementCount > 5 && totalAttractorEngagements > sequence.length * 0.8) {
+      narrativeApproach = 'thematic';
+    } else if (complexityIndex > 0.6) {
+      narrativeApproach = 'experimental';
+    }
+    
+    // Extract dominant pattern lengths
+    const dominantPatternLengths = recursivePatterns
+      .slice(0, 3) // Top 3 patterns
+      .map(pattern => pattern.length);
+    
+    // Build character transition matrix
+    const characterTransitionMatrix: Record<Character, Record<Character, number>> = {
+      'Archaeologist': { 'Archaeologist': 0, 'Algorithm': 0, 'LastHuman': 0 },
+      'Algorithm': { 'Archaeologist': 0, 'Algorithm': 0, 'LastHuman': 0 },
+      'LastHuman': { 'Archaeologist': 0, 'Algorithm': 0, 'LastHuman': 0 }
+    };
+    
+    const characterSequence = sequence.map(nodeId => nodes[nodeId]?.character).filter((char): char is Character => Boolean(char));
+    for (let i = 1; i < characterSequence.length; i++) {
+      const fromChar = characterSequence[i - 1];
+      const toChar = characterSequence[i];
+      if (fromChar && toChar) {
+        characterTransitionMatrix[fromChar][toChar]++;
+      }
+    }
+    
+    // Create temporal jump signature (distribution of jump distances)
+    const temporalJumpSignature = Array(9).fill(0); // Indices 0-8 for distances 0-8
+    temporalJumping.jumpDistances.forEach(distance => {
+      if (distance < temporalJumpSignature.length) {
+        temporalJumpSignature[distance]++;
+      }
+    });
+    
+    // Normalize attractor engagement profile
+    const attractorValues = Object.values(attractorsEngagedTyped) as number[];
+    const maxEngagement = attractorValues.length > 0 ? Math.max(...attractorValues) : 0;
+    const attractorEngagementProfile: Record<StrangeAttractor, number> = {} as Record<StrangeAttractor, number>;
+    Object.entries(attractorsEngagedTyped).forEach(([attractor, count]) => {
+      attractorEngagementProfile[attractor as StrangeAttractor] = maxEngagement > 0 ? (count as number) / maxEngagement : 0;
+    });
+    
+    // Generate unique ID based on path characteristics
+    const fingerprintData = [
+      explorationStyle,
+      temporalPreference,
+      narrativeApproach,
+      Math.floor(recursiveIndex * 100),
+      Math.floor(focusIndex * 100),
+      Math.floor(velocityIndex * 100),
+      Math.floor(complexityIndex * 100)
+    ].join('-');
+    
+    const id = `journey-${sequence.length}-${fingerprintData}`;
+    
+    return {
+      id,
+      explorationStyle,
+      characterAffinity,
+      temporalPreference,
+      narrativeApproach,
+      recursiveIndex,
+      focusIndex,
+      velocityIndex,
+      complexityIndex,
+      dominantPatternLengths,
+      characterTransitionMatrix,
+      temporalJumpSignature,
+      attractorEngagementProfile,
+      pathLength: sequence.length,
+      uniqueNodesVisited: new Set(sequence).size,
+      generatedAt: sequence.length
+    };
   }
 }
 
