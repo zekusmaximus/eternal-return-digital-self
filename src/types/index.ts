@@ -54,7 +54,34 @@ export type NodeVisualState =
 export type EndpointOrientation = 'past' | 'present' | 'future';
 
 /**
- * Enhanced transformation condition for content transformations
+ * Enhanced transformation condition for content transformations.
+ * 
+ * This interface supports both basic navigation-based conditions and advanced
+ * PathAnalyzer-integrated conditions for sophisticated content adaptation.
+ * 
+ * Basic Conditions:
+ * - visitCount: Minimum number of visits to current node
+ * - visitPattern: Specific sequence of nodes that must have been visited
+ * - previouslyVisitedNodes: Set of nodes that must have been visited (any order)
+ * - strangeAttractorsEngaged: Thematic attractors that must be engaged
+ * - temporalPosition: Required temporal layer (past/present/future)
+ * - endpointProgress: Progress toward philosophical endpoints
+ * - revisitPattern: Specific revisit requirements for nodes
+ * - characterBleed: Transition between different character perspectives
+ * - journeyPattern: Recent navigation sequence matching
+ * 
+ * Advanced PathAnalyzer Conditions:
+ * - characterFocus: Character preference patterns and intensity analysis
+ * - temporalFocus: Temporal layer focus patterns and progression analysis
+ * - attractorAffinity: Thematic affinity patterns and continuity analysis
+ * - attractorEngagement: Detailed engagement metrics and trend analysis
+ * - recursivePattern: Recursive navigation patterns and strength analysis
+ * - journeyFingerprint: Complete navigation style and behavioral patterns
+ * 
+ * Logical Operators:
+ * - anyOf: At least one condition must be true (OR)
+ * - allOf: All conditions must be true (AND)
+ * - not: Condition must be false (NOT)
  */
 export interface TransformationCondition {
   // Basic visit count threshold
@@ -85,9 +112,52 @@ export interface TransformationCondition {
   
   // Character bleed condition - detects when previous node had different character
   characterBleed?: boolean;
-  
-  // Journey pattern condition - matches recent navigation sequences
+    // Journey pattern condition - matches recent navigation sequences
   journeyPattern?: string[];
+  
+  // Character focus condition - evaluates character preference patterns
+  characterFocus?: {
+    characters: Character[];
+    minFocusRatio?: number; // Default 0.4 (40%)
+    includeIntensity?: boolean; // Use character focus intensity metrics
+  };
+  
+  // Temporal focus condition - evaluates temporal layer focus patterns
+  temporalFocus?: {
+    temporalLayers: TemporalLabel[];
+    minFocusRatio?: number; // Default 0.4 (40%)
+    includeProgression?: boolean; // Check for chronological patterns
+  };
+  
+  // Attractor affinity condition - evaluates thematic affinity patterns
+  attractorAffinity?: {
+    attractors: StrangeAttractor[];
+    minAffinityRatio?: number; // Default 0.25 (25%)
+    includeThematicContinuity?: boolean; // Check thematic connections
+  };
+  
+  // Attractor engagement condition - evaluates engagement level conditions
+  attractorEngagement?: {
+    attractor: StrangeAttractor;
+    minEngagementScore?: number; // Default 50 (0-100 scale)
+    trendRequired?: 'rising' | 'falling' | 'stable' | 'any';
+  };
+  
+  // Recursive pattern condition - evaluates recursive navigation patterns
+  recursivePattern?: {
+    minPatternStrength?: number; // Default 0.6
+    maxPatternLength?: number; // Default 4
+    requireRecency?: boolean; // Pattern must be recent
+  };
+  
+  // Journey fingerprint condition - evaluates navigation style patterns
+  journeyFingerprint?: {
+    explorationStyle?: 'linear' | 'recursive' | 'wandering' | 'focused' | 'chaotic';
+    temporalPreference?: 'past-oriented' | 'present-focused' | 'future-seeking' | 'time-fluid';
+    narrativeApproach?: 'systematic' | 'intuitive' | 'thematic' | 'experimental';
+    minComplexityIndex?: number; // 0-1 scale
+    minFocusIndex?: number; // 0-1 scale
+  };
   
   // Logical operators for complex conditions
   anyOf?: TransformationCondition[]; // At least one condition must be true

@@ -93,7 +93,34 @@ class LRUCache<K, V> {
 }
 
 /**
- * Enhanced transformation condition interface with all supported condition types
+ * Enhanced transformation condition interface with all supported condition types.
+ * 
+ * This interface supports both basic navigation-based conditions and advanced
+ * PathAnalyzer-integrated conditions for sophisticated content adaptation.
+ * 
+ * Basic Conditions:
+ * - visitCount: Minimum number of visits to current node
+ * - visitPattern: Specific sequence of nodes that must have been visited
+ * - previouslyVisitedNodes: Set of nodes that must have been visited (any order)
+ * - strangeAttractorsEngaged: Thematic attractors that must be engaged
+ * - temporalPosition: Required temporal layer (past/present/future)
+ * - endpointProgress: Progress toward philosophical endpoints
+ * - revisitPattern: Specific revisit requirements for nodes
+ * - characterBleed: Transition between different character perspectives
+ * - journeyPattern: Recent navigation sequence matching
+ * 
+ * Advanced PathAnalyzer Conditions:
+ * - characterFocus: Character preference patterns and intensity analysis
+ * - temporalFocus: Temporal layer focus patterns and progression analysis
+ * - attractorAffinity: Thematic affinity patterns and continuity analysis
+ * - attractorEngagement: Detailed engagement metrics and trend analysis
+ * - recursivePattern: Recursive navigation patterns and strength analysis
+ * - journeyFingerprint: Complete navigation style and behavioral patterns
+ * 
+ * Logical Operators:
+ * - anyOf: At least one condition must be true (OR)
+ * - allOf: All conditions must be true (AND)
+ * - not: Condition must be false (NOT)
  */
 export interface TransformationCondition {
   // Basic visit count threshold
