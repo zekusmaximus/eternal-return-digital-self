@@ -15,7 +15,7 @@ import { ConstellationNode, NodePositions } from '../../types';
 import { forwardRef, useMemo, useRef, useState } from 'react';
 import { Color, InstancedMesh, ShaderMaterial } from 'three';
 import * as THREE from 'three';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import type { ThreeEvent } from '@react-three/fiber';
 import { Text } from '@react-three/drei';
 
@@ -176,6 +176,7 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
     triumvirateNodes,
   } = props;
   const dispatch = useDispatch<AppDispatch>();
+  const { camera } = useThree();
   
   const hoveredNodeId = useSelector(selectHoveredNodeId);
   const reduxSelectedNodeId = useSelector(selectSelectedNodeId);
@@ -205,6 +206,8 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
   const forceFieldMaterialRefs = useRef<ShaderMaterial[]>([]);
   const nodeMeshRefs = useRef<THREE.Object3D[]>([]);
   const forceFieldMeshRefs = useRef<THREE.Object3D[]>([]);
+  const labelTextRefs = useRef<THREE.Object3D[]>([]);
+  const triumvirateTextRefs = useRef<THREE.Object3D[]>([]);
   
   // Store original positions for the noise animation
   const originalPositions = useRef<{[key: string]: [number, number, number]}>({});
@@ -356,6 +359,21 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
           }        }
       }
       
+      // Update text billboard behavior - make text always face camera
+      // Update both label text and triumvirate text to face the camera
+      for (let i = 0; i < nodes.length; i++) {
+        const labelText = labelTextRefs.current[i];
+        const triumvirateText = triumvirateTextRefs.current[i];
+        
+        if (labelText && labelText.visible) {
+          labelText.lookAt(camera.position);
+        }
+        
+        if (triumvirateText && triumvirateText.visible) {
+          triumvirateText.lookAt(camera.position);
+        }
+      }
+      
       // Update group positions for next render
       setGroupPositions({ ...currentPositions });
       
@@ -438,8 +456,6 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
           // Potentially give starting nodes a distinct look even if not selected/hovered,
           // or this could be handled by the pulsing effect later.
           // For now, let's ensure they don't get dimmed like 'isConnected' if they are also connected.
-          // This logic might need refinement based on how visual effects are combined.
-          // If it's a starting node, we might want its base color to be more prominent.
           // Example: nodeColor.multiplyScalar(1.1); // Slightly brighter if it's a starting node
         }        // The main node group's position is determined by synchronized positions,
         // and individual elements within this group (like the sphere and text) will be positioned relatively.
@@ -447,10 +463,18 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
         
         return (
           <group
-            key={node.id}            position={groupPosition} // Position group at the node's current position
+            key={node.id}
+            position={groupPosition} // Position group at the node's current position
             userData={{ nodeId: node.id }} // Add nodeId to userData for connection positioning
-          >{isDesignatedStartingNode && isInitialChoicePhase && !triumvirateActive && !props.isMinimap && labelText && node.visitCount === 0 && (
+          >
+            {/* Text label for node - only for designated starting nodes in initial choice phase */}
+            {isDesignatedStartingNode && isInitialChoicePhase && !triumvirateActive && !props.isMinimap && labelText && (
               <Text
+                ref={(text) => {
+                  if (text) {
+                    labelTextRefs.current[index] = text;
+                  }
+                }}
                 position={[0, 2.2, 0]} // Position higher above the node sphere
                 fontSize={0.4} // Larger font size for better visibility
                 color="white"
@@ -464,9 +488,16 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
               >
                 {labelText}
               </Text>
-            )}            {/* Triumvirate text labels */}
+            )}
+
+            {/* Triumvirate text labels */}
             {triumvirateActive && !props.isMinimap && triumvirateText && (
               <Text
+                ref={(text) => {
+                  if (text) {
+                    triumvirateTextRefs.current[index] = text;
+                  }
+                }}
                 position={[0, 2.2, 0]} // Position above the node sphere (relative to the group)
                 fontSize={0.6} // Larger font size for better visibility
                 color="white"
@@ -671,6 +702,8 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
                   color: { value: nodeColor },
                   time: { value: 0 }
                 }}
+                transparent={true}
+                depthWrite={false}
               />
             </mesh>
           </group>
