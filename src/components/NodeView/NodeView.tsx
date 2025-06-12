@@ -12,6 +12,7 @@ import {
 } from '../../store/slices/interfaceSlice';
 import { loadNodeContent, selectNodeById, visitNode } from '../../store/slices/nodesSlice';
 import { useAppDispatch } from '../../store/hooks';
+import { addVisitedNode } from '../../store/slices/readerSlice';
 import './NodeView.css';
 import '../common/ErrorStyles.css'; // Import error and debug styles
 import { RootState } from '../../store';
@@ -76,6 +77,7 @@ const NodeView = () => {
   const selectedNodeId = useSelector(selectSelectedNodeId);
   const viewMode = useSelector(selectViewMode);
   const node = useSelector((state: RootState) => selectedNodeId ? selectNodeById(state, selectedNodeId) : null);
+  // Extract stable primitives for hooks
 
   // Get unique view key from ViewManager to force proper unmount/remount
   const uniqueViewKey = useMemo(() => viewManager.getUniqueViewKey(), []);
@@ -97,6 +99,8 @@ const NodeView = () => {
   const renderCompleteCalledRef = useRef(false);
   const processedNodeRef = useRef<string | null>(null);
   const narramorphActivatedRef = useRef(false);
+  // Track last visited node ID to ensure breadcrumb effect runs once per distinct node
+  const lastVisitedIdRef = useRef<string | null>(null);
 
   // Create a state to track view transitions
   const [viewTransitionState, setViewTransitionState] = useState({
@@ -269,6 +273,7 @@ const NodeView = () => {
     return node?.currentContent?.substring(0, 50) || 'NO CONTENT';
   }, [node?.currentContent]);
 
+
   // Separate effect for content loaded debugging - SIMPLIFIED to prevent loops
   useEffect(() => {
     if (node?.id && processedNodeRef.current === selectedNodeId) {
@@ -386,12 +391,34 @@ const NodeView = () => {
     return undefined; // Explicit return for when condition is false
   }, [contentLength, node?.id, viewMode]);
   
-  // Separate effect to track node visits - only runs when selectedNodeId changes
+  // Effect to track node visits and breadcrumb history – fires once per unique node ID
   useEffect(() => {
-    if (selectedNodeId) {
-      dispatch(visitNode(selectedNodeId));
-    }
-  }, [selectedNodeId, dispatch]);
+    if (!node?.id || node.id === lastVisitedIdRef.current) return;
+
+    // Increment visit count for analytics
+    dispatch(visitNode(node.id));
+
+    // Create a plain-text synopsis from current content (first 100 chars)
+    const synopsis =
+      (node.currentContent ?? '')
+        .replace(/<\/?[^>]+(>|$)/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 100);
+
+    // Add breadcrumb / visited node entry
+    dispatch(
+      addVisitedNode({
+        id: node.id,
+        title: node.title ?? '',
+        synopsis,
+      }),
+    );
+
+    // Update ref to prevent duplicate processing
+    lastVisitedIdRef.current = node.id;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch, node?.id]);
   
   // Handle WebGL context loss errors
   useEffect(() => {

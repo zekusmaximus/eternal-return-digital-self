@@ -15,12 +15,25 @@ import {
   getTemporalLabel
 } from '../../types';
 
-export interface ReaderState { // Add 'export' here
+/**
+ * Represents a node the reader has visited for breadcrumb history.
+ */
+export interface VisitedNode {
+  id: string;
+  title: string;
+  synopsis: string; // first 100 chars of rendered markdown (markup stripped)
+}
+export interface ReaderState {
   path: ReadingPath;
   currentNodeId: string | null;
   previousNodeId: string | null;
   endpointProgress: Record<EndpointOrientation, number>;
   attractorEngagement: Record<StrangeAttractor, number>;
+  /**
+   * Chronological list of recently visited nodes (most-recent first).
+   * Max 25 entries, consecutive duplicates collapsed.
+   */
+  visited?: VisitedNode[];
   // Time-based properties removed (2025-06-08)
 }
 
@@ -55,7 +68,8 @@ const initialState: ReaderState = {
     present: 0,
     future: 0
   },
-  attractorEngagement: {} as Record<StrangeAttractor, number>
+  attractorEngagement: {} as Record<StrangeAttractor, number>,
+  visited: [],
   // Time-based properties removed (2025-06-08)
 };
 
@@ -150,6 +164,20 @@ const readerSlice = createSlice({
       const temporalSequence = state.path.patternSequences.temporalSequences[0] || [];
       temporalSequence.push(temporalLayer);
       state.path.patternSequences.temporalSequences[0] = temporalSequence;
+    },
+
+    /**
+     * Append a node to breadcrumb history (recent-first, max 25, collapse duplicates).
+     */
+    addVisitedNode: (state, action: PayloadAction<VisitedNode>) => {
+      const node = action.payload;
+      const history = state.visited ?? [];
+      if (history.length > 0 && history[0].id === node.id) {
+        // consecutive duplicate – ignore
+        return;
+      }
+      const deduped = history.filter(v => v.id !== node.id);
+      state.visited = [node, ...deduped].slice(0, 25);
     },
     
     // Record engagement with a strange attractor with enhanced tracking
@@ -263,7 +291,8 @@ export const {
   engageAttractor,
   updateEndpointProgress,
   resetReader,
-  analyzePatterns
+  analyzePatterns,
+  addVisitedNode
 } = readerSlice.actions;
 
 // Export selector functions
@@ -379,5 +408,8 @@ export const selectMostEngagingNodes = (state: { reader: ReaderState }, count: n
     .sort((a, b) => b.visitCount - a.visitCount)
     .slice(0, count);
 };
+
+export const selectVisited = (state: { reader: ReaderState }) =>
+ state.reader.visited;
 
 export default readerSlice.reducer;
