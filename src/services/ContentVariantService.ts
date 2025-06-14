@@ -94,6 +94,16 @@ export class ContentVariantService {
     enhancedContent: EnhancedNarramorphContent,
     context: ContentSelectionContext
   ): string {
+    // Debug: Log context and available variants
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[ContentVariantService] selectContentVariant called with:', {
+        context,
+        visitCountVariants: Object.keys(enhancedContent.visitCountVariants),
+        sectionVariants: Object.keys(enhancedContent.sectionVariants),
+        base: enhancedContent.base
+      });
+    }
+
     // Priority order:
     // 1. Section variants based on journey state
     // 2. Visit-count variants
@@ -132,14 +142,27 @@ export class ContentVariantService {
         .map(Number)
         .sort((a, b) => b - a); // Sort descending
 
+      // Always use the highest available variant <= visitCount, otherwise the highest available
       const bestMatch = availableCounts.find(count => context.visitCount >= count);
       if (bestMatch !== undefined) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[ContentVariantService] Returning visitCount variant:', bestMatch);
+        }
         return enhancedContent.visitCountVariants[bestMatch];
       }
+      // Fallback: return the highest available visit count variant
+      const highest = availableCounts[0];
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[ContentVariantService] Fallback to highest visitCount variant:', highest);
+      }
+      return enhancedContent.visitCountVariants[highest];
     }
 
-    // Final fallback to base content
-    return enhancedContent.base;
+    // Final fallback to base content (if empty, fallback to empty string)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[ContentVariantService] Fallback to base content:', enhancedContent.base);
+    }
+    return enhancedContent.base || '';
   }
 
   /**

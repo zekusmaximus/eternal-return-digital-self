@@ -11,7 +11,8 @@ import {
   revealConnection,
   applyTransformation,
   evaluateTransformations,
-  applyJourneyTransformations
+  applyJourneyTransformations,
+  updateContentVariant
 } from '../store/slices/nodesSlice';
 import {
   navigateToNode,
@@ -24,6 +25,7 @@ import { StrangeAttractor, TransformationRule, TransformationCondition, TextTran
 import { RootState } from '../store/types';
 import { transformationEngine } from '../services/TransformationEngine';
 import { transformationService } from '../services/TransformationService';
+import { Character } from '../types';
 
 // Import the CSS for transformations
 import '../styles/NarramorphTransformations.css';
@@ -320,52 +322,52 @@ export const useNodeState = (nodeId?: string) => {
       nodeId: targetNodeId,
       readerState
     }));
-  }, [targetNodeId, node, dispatch, applyNodeTransformation, readerState]);// TEMPORARILY DISABLED: Update content variants when reader state changes
-  // This effect was causing content to disappear due to re-selection loops
-  // TODO: Re-enable with proper dependency management
-  /*
+  }, [targetNodeId, node, dispatch, applyNodeTransformation, readerState]);
+  
+  // Re-enable content variant update on visit count or journey change, with a visit cap for stability
   useEffect(() => {
     if (!node || !targetNodeId || !node.enhancedContent) return;
+    // Only run if enhancedContent has at least one variant or base content
+    const hasContent =
+      (node.enhancedContent.base && node.enhancedContent.base.length > 0) ||
+      Object.keys(node.enhancedContent.visitCountVariants).length > 0 ||
+      Object.keys(node.enhancedContent.sectionVariants).length > 0;
+    if (!hasContent) return;
 
-    // Create selection context and update content variant if needed
-    try {
-      const context = {
-        visitCount: node.visitCount,
-        lastVisitedCharacter: readerState.path.sequence.length > 1 
-          ? allNodes[readerState.path.sequence[readerState.path.sequence.length - 2]]?.character 
-          : undefined,
-        journeyPattern: readerState.path.sequence.slice(-5),
-        characterSequence: readerState.path.sequence
-          .slice(-5)
-          .map(id => allNodes[id]?.character)
-          .filter((char): char is Character => char !== undefined),
-        attractorsEngaged: readerState.path.attractorsEngaged || {},
-        recursiveAwareness: readerState.path.sequence.length > 0 
-          ? 1 - (new Set(readerState.path.sequence).size / readerState.path.sequence.length)
-          : 0
-      };
+    // Cap visit count to 5 for content variant selection
+    const cappedVisitCount = Math.min(node.visitCount, 5);
 
-      // Import dynamically to avoid circular dependencies
-      import('../services/ContentVariantService').then(({ contentVariantService }) => {
-        const selectedContent = contentVariantService.selectContentVariant(
-          node.enhancedContent!,
-          context
-        );
+    const context = {
+      visitCount: cappedVisitCount,
+      lastVisitedCharacter: readerState.path.sequence.length > 1 
+        ? allNodes[readerState.path.sequence[readerState.path.sequence.length - 2]]?.character 
+        : undefined,
+      journeyPattern: readerState.path.sequence.slice(-5),
+      characterSequence: readerState.path.sequence
+        .slice(-5)
+        .map(id => allNodes[id]?.character)
+        .filter((char): char is Character => char !== undefined),
+      attractorsEngaged: readerState.path.attractorsEngaged || {},
+      recursiveAwareness: readerState.path.sequence.length > 0 
+        ? 1 - (new Set(readerState.path.sequence).size / readerState.path.sequence.length)
+        : 0
+    };
 
-        // Only dispatch if the content actually changed
-        if (selectedContent !== node.currentContent) {
-          dispatch(updateContentVariant({ 
-            nodeId: targetNodeId, 
-            context,
-            selectedContent 
-          }));
-        }
-      });
-    } catch (error) {
-      console.warn(`[useNodeState] Error updating content variant for node ${targetNodeId}:`, error);
-    }
+    import('../services/ContentVariantService').then(({ contentVariantService }) => {
+      const selectedContent = contentVariantService.selectContentVariant(
+        node.enhancedContent!,
+        context
+      );
+      // Only dispatch if the content actually changed
+      if (selectedContent !== node.currentContent) {
+        dispatch(updateContentVariant({ 
+          nodeId: targetNodeId, 
+          context,
+          selectedContent 
+        }));
+      }
+    });
   }, [node, targetNodeId, readerState.path, allNodes, dispatch]);
-  */
   
   // Evaluate a condition directly using the transformation engine
   const evaluateCondition = useCallback(
