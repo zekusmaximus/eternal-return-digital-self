@@ -31,17 +31,18 @@ export class ContentVariantService {
     // Split by both visit-count and section delimiters
     // Visit-count pattern: ---[number]
     // Section pattern: ---section-name---
-    const combinedPattern = /---(\[(\d+)\]|([a-zA-Z0-9\-_]+))---/;
+    const combinedPattern = /---(?:\[(\d+)\]|([a-zA-Z0-9\-_]+))(?:---)?/;
     const parts = rawContent.split(combinedPattern);
 
     // First part is base content (before any delimiter)
     if (parts.length > 0 && !rawContent.startsWith('---')) {
       result.base = parts[0].trim();
     }    // Process the remaining parts
-    for (let i = 1; i < parts.length; i += 4) {
-      const visitCountMatch = parts[i + 1]; // Visit count if it's a [number] pattern
-      const sectionMatch = parts[i + 2]; // Section name if it's a section pattern
-      const content = parts[i + 3]?.trim() || '';
+    for (let i = 1; i < parts.length; i += 3) {
+      const visitCountMatch = parts[i]; // Visit count if it's a [number] pattern
+      const rawSectionMatch = parts[i + 1]; // Section name if it's a section pattern
+      const sectionMatch = rawSectionMatch ? rawSectionMatch.replace(/---$/, '') : undefined;
+      const content = parts[i + 2]?.trim() || '';
 
       if (visitCountMatch) {
         // This is a visit-count variant
