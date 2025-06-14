@@ -396,12 +396,10 @@ const NodeView = () => {
     if (!node?.id || node.id === lastVisitedIdRef.current) return;
 
     // Increment visit count for analytics
-    dispatch(visitNode(node.id));
-
-    // Create a plain-text synopsis from current content (first 100 chars)
+    dispatch(visitNode(node.id));    // Create a plain-text synopsis from current content (first 100 chars)
     const synopsis =
       (node.currentContent ?? '')
-        .replace(/<\/?[^>]+(>|$)/g, '')
+        .replace(/<[^>]*>/g, '')
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 100);

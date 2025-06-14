@@ -120,9 +120,8 @@
       resultsElement.textContent += "4. Try to rotate it and verify it only rotates on Z axis\n";
       resultsElement.textContent += "5. Try to zoom in/out and verify it's not possible\n";
     });
-    
-    document.getElementById('open-app').addEventListener('click', function() {
-      window.open('http://localhost:5173/', '_blank');
+      document.getElementById('open-app').addEventListener('click', function() {
+      window.open('http://localhost:5173/', '_blank', 'noopener,noreferrer');
     });
   </script>
 </body>

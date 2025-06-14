@@ -12,7 +12,7 @@
  * - Intersection Observer for viewport detection
  */
 
-import React, { useEffect, useState, useRef, useMemo, memo } from 'react';
+import React, { useEffect, useState, useRef, useMemo, memo, useCallback } from 'react';
 import { useNodeState } from '../../hooks/useNodeState';
 import { TextTransformation } from '../../types';
 import { useSelector } from 'react-redux';
@@ -90,7 +90,180 @@ const NarramorphRenderer: React.FC<NarramorphRendererProps> = memo(({ nodeId, on
     return () => {
       window.removeEventListener('error', handleWebGLError);
     };
-  }, [isVisible, onVisibilityChange]);
+  }, [isVisible, onVisibilityChange]);  // Helper function to handle visibility state validation
+  const validateAndUpdateVisibility = useCallback((
+    isNowVisible: boolean,
+    previousVisibility: boolean,
+    isComponentMounted: boolean
+  ): boolean => {
+    if (!isComponentMounted || !contentRef.current) return false;
+    
+    const now = Date.now();
+    const timeSinceLastChange = now - lastVisibilityChangeRef.current;
+    const tooManyChanges = visibilityChangeCountRef.current > 3 && timeSinceLastChange < 15000;
+    
+    return (
+      isVisible !== isNowVisible &&
+      timeSinceLastChange > 3000 &&
+      !tooManyChanges &&
+      previousVisibility === isVisible
+    );
+  }, [isVisible]);
+
+  // Helper function to apply visibility change
+  const applyVisibilityChange = useCallback((
+    isNowVisible: boolean,
+    isComponentMounted: boolean
+  ): void => {
+    if (!isComponentMounted) return;
+    
+    lastVisibilityChangeRef.current = Date.now();
+    visibilityChangeCountRef.current += 1;
+    
+    setIsVisible(isNowVisible);
+    
+    // Reset change counter after 15 seconds of stability
+    setTimeout(() => {
+      if (isComponentMounted) {
+        visibilityChangeCountRef.current = 0;
+      }
+    }, 15000);
+    
+    // Call the visibility change callback
+    if (onVisibilityChange) {
+      console.log("[NarramorphRenderer] Calling onVisibilityChange:", isNowVisible, "Previous:", isVisible);
+      onVisibilityChange(isNowVisible);
+    }
+    
+    // Update metrics and inform transformation service
+    setMetrics(prev => ({
+      ...prev,
+      visibilityChanges: prev.visibilityChanges + 1
+    }));
+    
+    if (node?.id) {
+      transformationService.setContentVisibility(
+        node.id,
+        isNowVisible,
+        node.id === nodeId ? 2 : 1
+      );
+    }
+    
+    // Force re-render when becoming visible
+    if (isNowVisible) {
+      setRenderKey(prev => prev + 1);
+    }
+  }, [isVisible, onVisibilityChange, node?.id, nodeId]);
+
+  // Helper function to handle the delayed visibility validation
+  const handleDelayedValidation = useCallback((
+    isNowVisible: boolean,
+    entries: IntersectionObserverEntry[],
+    isComponentMounted: boolean
+  ): void => {
+    if (!isComponentMounted) return;
+    
+    const finalCheck = entries[0]?.isIntersecting ?? true;
+    if (finalCheck === isNowVisible) {
+      applyVisibilityChange(isNowVisible, isComponentMounted);
+    } else {
+      console.log("[NarramorphRenderer] Visibility state inconsistent - ignoring change");
+    }
+  }, [applyVisibilityChange]);
+
+  // Helper function for the debounced visibility update
+  const handleDebouncedVisibilityUpdate = useCallback((
+    isNowVisible: boolean,
+    entries: IntersectionObserverEntry[],
+    isComponentMounted: boolean
+  ): void => {
+    if (!validateAndUpdateVisibility(isNowVisible, previousVisibilityRef.current, isComponentMounted)) {
+      return;
+    }
+    
+    // Schedule final validation check after a short delay
+    setTimeout(() => {
+      handleDelayedValidation(isNowVisible, entries, isComponentMounted);
+    }, 500);  }, [validateAndUpdateVisibility, handleDelayedValidation]);
+
+  // Helper function to apply animation classes to a single element
+  const applyElementAnimation = useCallback((
+    element: Element,
+    appliedTransformations: TextTransformation[],
+    newTransformations: string[]
+  ): void => {
+    const type = element.getAttribute('data-transform-type');
+    const text = element.textContent || '';
+    
+    // Only animate elements that match new transformations
+    const matchingTransformation = appliedTransformations.find(t =>
+      t.type === type &&
+      text.includes(t.selector || '') &&
+      newTransformations.includes(`${t.type}-${t.selector}`)
+    );
+    
+    if (!matchingTransformation) return;
+    
+    // Add all classes at once for better performance
+    element.classList.add('narramorph-transform-new');
+    
+    // Add appropriate effect class based on transformation type
+    const typeClassMap: Record<string, string> = {
+      'replace': 'narramorph-replaced',
+      'fragment': 'narramorph-fragmented', 
+      'expand': 'narramorph-expanded',
+      'emphasize': `narramorph-emphasis-${matchingTransformation.emphasis || 'color'}`,
+      'metaComment': 'narramorph-commented'
+    };
+    
+    const className = typeClassMap[type as string];
+    if (className) {
+      element.classList.add(className);
+    }
+    
+    // Schedule class removal
+    setTimeout(() => {
+      element.classList.remove('narramorph-transform-new');
+    }, 2000);
+  }, []);
+
+  // Helper function to process a batch of elements
+  const processBatch = useCallback((
+    batch: Element[],
+    appliedTransformations: TextTransformation[],
+    newTransformations: string[]
+  ): void => {
+    batch.forEach(element => {
+      applyElementAnimation(element, appliedTransformations, newTransformations);
+    });
+  }, [applyElementAnimation]);
+
+  // Helper function to create batches from elements
+  const createBatches = useCallback((elements: Element[], batchSize: number = 5): Element[][] => {
+    const batches: Element[][] = [];
+    for (let i = 0; i < elements.length; i += batchSize) {
+      batches.push(Array.from(elements).slice(i, i + batchSize));
+    }
+    return batches;
+  }, []);
+
+  // Helper function to apply animations with staggered timing
+  const applyAnimationsWithStagger = useCallback((
+    elements: Element[],
+    appliedTransformations: TextTransformation[],
+    newTransformations: string[],
+    staggerDelay: number = 50
+  ): void => {
+    const batches = createBatches(elements, 5);
+    const batchSize = 5;
+    
+    // Process batches with staggered timing
+    batches.forEach((batch, batchIndex) => {
+      setTimeout(() => {
+        processBatch(batch, appliedTransformations, newTransformations);
+      }, batchIndex * staggerDelay * batchSize);
+    });
+  }, [createBatches, processBatch]);
 
   // Setup intersection observer for visibility detection with guaranteed initial visibility
   useEffect(() => {
@@ -111,8 +284,7 @@ const NarramorphRenderer: React.FC<NarramorphRendererProps> = memo(({ nodeId, on
         onVisibilityChange(true);
       }
     }
-    
-    // Create observer with enhanced debouncing to prevent too many updates
+      // Create observer with enhanced debouncing to prevent too many updates
     let visibilityTimeout: number | null = null;
     let validationTimeout: number | null = null;
     let isComponentMounted = true;
@@ -125,104 +297,30 @@ const NarramorphRenderer: React.FC<NarramorphRendererProps> = memo(({ nodeId, on
         }
         
         const isNowVisible = entries[0]?.isIntersecting ?? true;
-        const now = Date.now();
         
         // Store previous visibility for validation
         previousVisibilityRef.current = isVisible;
         
-        // Enhanced throttling with multiple validation checks
-        // 1. Visibility must have truly changed
-        // 2. Sufficient time must have passed since last change (3 seconds minimum)
-        // 3. Cannot have more than 3 visibility changes in 15 seconds
-        const timeSinceLastChange = now - lastVisibilityChangeRef.current;
-        const tooManyChanges = visibilityChangeCountRef.current > 3 && timeSinceLastChange < 15000;
-        
-        if (isVisible !== isNowVisible &&
-            contentRef.current &&
-            timeSinceLastChange > 3000 && // Increased from 2s to 3s
-            !tooManyChanges &&
-            isComponentMounted) {
-            
-          // Cancel any pending visibility updates
-          if (visibilityTimeout) {
-            window.clearTimeout(visibilityTimeout);
-          }
-          if (validationTimeout) {
-            window.clearTimeout(validationTimeout);
-          }
-          
-          // Log potential visibility change
-          console.log(`[NarramorphRenderer] Potential visibility change detected: ${isVisible} -> ${isNowVisible}`);
-          
-          // Use a longer debounce time to prevent rapid cycling (increased to 1200ms)
-          visibilityTimeout = window.setTimeout(() => {
-            // Double-check that visibility truly changed and element still exists
-            if (isVisible !== isNowVisible &&
-                contentRef.current &&
-                previousVisibilityRef.current === isVisible &&
-                isComponentMounted) {
-                
-              // Schedule final validation check after a short delay
-              validationTimeout = window.setTimeout(() => {
-                // Final verification that visibility state is consistent
-                if (!isComponentMounted) return;
-                
-                const finalCheck = entries[0]?.isIntersecting ?? true;
-                if (finalCheck === isNowVisible) {
-                  // Update timestamp and count
-                  lastVisibilityChangeRef.current = Date.now();
-                  visibilityChangeCountRef.current += 1;
-                  
-                  // Update state only after multiple validations
-                  if (isComponentMounted) {
-                    setIsVisible(isNowVisible);
-                  }
-                  
-                  // Reset change counter after 15 seconds of stability
-                  setTimeout(() => {
-                    if (isComponentMounted) {
-                      visibilityChangeCountRef.current = 0;
-                    }
-                  }, 15000);
-                  
-                  // Call the visibility change callback if provided
-                  if (onVisibilityChange && isComponentMounted) {
-                    console.log("[NarramorphRenderer] Calling onVisibilityChange:", isNowVisible, "Previous:", isVisible);
-                    onVisibilityChange(isNowVisible);
-                  }
-                } else {
-                  console.log("[NarramorphRenderer] Visibility state inconsistent - ignoring change");
-                }
-                validationTimeout = null;
-              }, 500); // Increased validation delay
-            }
-            
-            if (isComponentMounted) {
-              setMetrics(prev => ({
-                ...prev,
-                visibilityChanges: prev.visibilityChanges + 1
-              }));
-              
-              // Inform the transformation service about visibility changes
-              // But only after validation checks pass
-              if (node?.id) {
-                transformationService.setContentVisibility(
-                  node.id,
-                  isNowVisible,
-                  node.id === nodeId ? 2 : 1
-                );
-              }
-              
-              // Force a re-render when becoming visible again
-              // But only when state is stable
-              if (isNowVisible) {
-                setRenderKey(prev => prev + 1);
-              }
-            }
-            
-            visibilityTimeout = null;
-          }, 1200); // Increased debounce time to prevent cascading updates
+        if (!validateAndUpdateVisibility(isNowVisible, previousVisibilityRef.current, isComponentMounted)) {
+          return;
         }
+        
+        // Cancel any pending visibility updates
+        if (visibilityTimeout) {
+          window.clearTimeout(visibilityTimeout);
+        }
+        if (validationTimeout) {
+          window.clearTimeout(validationTimeout);
+        }
+        
+        // Log potential visibility change
+        console.log(`[NarramorphRenderer] Potential visibility change detected: ${isVisible} -> ${isNowVisible}`);
+        
+        // Use a longer debounce time to prevent rapid cycling (increased to 1200ms)
+        visibilityTimeout = window.setTimeout(() => {
+          handleDebouncedVisibilityUpdate(isNowVisible, entries, isComponentMounted);
+          visibilityTimeout = null;
+        }, 1200);
       },
       {
         root: null,
@@ -259,7 +357,7 @@ const NarramorphRenderer: React.FC<NarramorphRendererProps> = memo(({ nodeId, on
         observerRef.current = null;
       }
     };
-  }, [node?.id, nodeId, isVisible, onVisibilityChange]); // Added isVisible and onVisibilityChange to deps
+  }, [node?.id, nodeId, isVisible, onVisibilityChange, handleDebouncedVisibilityUpdate, validateAndUpdateVisibility]);
   
   // Prioritize transformations based on visibility and importance
   const prioritizedTransformations = useMemo(() => {
@@ -328,67 +426,9 @@ const NarramorphRenderer: React.FC<NarramorphRendererProps> = memo(({ nodeId, on
         }
       });
       
-      // Apply animation class to new transformations with staggered timing
-      // Optimize by using a single setTimeout callback for each batch
-      const applyAnimationsWithStagger = (elements: Element[], staggerDelay: number = 50) => {
-        const batches: Element[][] = [];
-        const batchSize = 5; // Process 5 elements per batch for better performance
-        
-        // Create batches
-        for (let i = 0; i < elements.length; i += batchSize) {
-          batches.push(Array.from(elements).slice(i, i + batchSize));
-        }
-        
-        // Process batches with staggered timing
-        batches.forEach((batch, batchIndex) => {
-          setTimeout(() => {
-            batch.forEach(element => {
-              const type = element.getAttribute('data-transform-type');
-              const text = element.textContent || '';
-              
-              // Only animate elements that match new transformations
-              const matchingTransformation = appliedTransformations.find(t =>
-                t.type === type &&
-                text.includes(t.selector || '') &&
-                newTransformations.includes(`${t.type}-${t.selector}`)
-              );
-              
-              if (matchingTransformation) {
-                // Add all classes at once for better performance
-                element.classList.add('narramorph-transform-new');
-                
-                // Add appropriate effect class based on transformation type
-                switch(type) {
-                  case 'replace':
-                    element.classList.add('narramorph-replaced');
-                    break;
-                  case 'fragment':
-                    element.classList.add('narramorph-fragmented');
-                    break;
-                  case 'expand':
-                    element.classList.add('narramorph-expanded');
-                    break;
-                  case 'emphasize':
-                    element.classList.add(`narramorph-emphasis-${matchingTransformation.emphasis || 'color'}`);
-                    break;
-                  case 'metaComment':
-                    element.classList.add('narramorph-commented');
-                    break;
-                }
-                
-                // Schedule class removal in one batch
-                setTimeout(() => {
-                  element.classList.remove('narramorph-transform-new');
-                }, 2000);
-              }
-            });
-          }, batchIndex * staggerDelay * batchSize);
-        });
-      };
-      
       // Apply animations with staggered timing for each group
       Object.values(transformGroups).forEach(group => {
-        applyAnimationsWithStagger(group);
+        applyAnimationsWithStagger(group, appliedTransformations, newTransformations);
       });
       
       // Update animated transformations list
@@ -402,7 +442,7 @@ const NarramorphRenderer: React.FC<NarramorphRendererProps> = memo(({ nodeId, on
         transformationsCount: appliedTransformations.length
       }));
     });
-  }, [newlyTransformed, appliedTransformations, animatedTransformations, isVisible]);
+  }, [newlyTransformed, appliedTransformations, animatedTransformations, isVisible, applyAnimationsWithStagger]);
   
   // When node changes, reset animation state and update visibility tracking
   useEffect(() => {
@@ -414,11 +454,9 @@ const NarramorphRenderer: React.FC<NarramorphRendererProps> = memo(({ nodeId, on
         renderTime: 0,
         transformationsCount: 0,
         visibilityChanges: 0,
-        deferredTransformations: 0
-      });
+        deferredTransformations: 0      });
     }
   }, [node?.id]);
-  
   
   // Show error state if WebGL context was lost
   if (webGLError) {

@@ -324,7 +324,6 @@ export class TransformationEngine {
     this.batchedTransformationCache.clear();
     this.lastModificationTime = Date.now();
   }
-
   /**
    * Core method to evaluate if a transformation should apply based on the condition
    * and current reader and node state, with caching for performance
@@ -336,23 +335,32 @@ export class TransformationEngine {
   ): boolean {
     this.stats.conditionEvaluations++;
     
-    // Skip caching for empty conditions
     if (Object.keys(condition).length === 0) {
       return true;
     }
     
-    // Generate cache key
     const cacheKey = this.getConditionCacheKey(condition, readerState, nodeState);
-    
-    // Check cache first
     const cachedResult = this.conditionCache.get(cacheKey);
+    
     if (cachedResult !== undefined) {
       this.stats.conditionCacheHits++;
       return cachedResult;
     }
     
-    // For debugging
-    // console.log('Evaluating condition:', JSON.stringify(condition));
+    const result = this.evaluateConditionInternal(condition, readerState, nodeState);
+    this.conditionCache.put(cacheKey, result);
+    
+    return result;
+  }
+
+  /**
+   * Internal condition evaluation logic separated from caching concerns
+   */
+  private evaluateConditionInternal(
+    condition: TransformationCondition,
+    readerState: ReaderState,
+    nodeState: NodeState
+  ): boolean {
     // Handle logical operators first
     if (condition.allOf?.length) {
       return condition.allOf.every(subCondition => 
@@ -370,125 +378,119 @@ export class TransformationEngine {
       return !this.evaluateCondition(condition.not, readerState, nodeState);
     }
     
-    // Handle basic conditions
+    // Use condition evaluators map for cleaner logic
+    return this.evaluateBasicConditions(condition, readerState, nodeState) &&
+           this.evaluateAdvancedConditions(condition, readerState, nodeState);
+  }
+
+  /**
+   * Evaluate basic navigation-based conditions
+   */
+  private evaluateBasicConditions(
+    condition: TransformationCondition,
+    readerState: ReaderState,
+    nodeState: NodeState
+  ): boolean {
+    const basicChecks = [
+      () => this.checkVisitCount(condition, nodeState),
+      () => this.checkPreviouslyVisitedNodes(condition, readerState),
+      () => this.checkVisitPattern(condition, readerState),
+      () => this.checkStrangeAttractors(condition, readerState),
+      () => this.checkTemporalPosition(condition, nodeState),
+      () => this.checkEndpointProgress(condition, readerState),
+      () => this.checkRevisitPattern(condition, readerState),
+      () => this.checkCharacterBleed(condition, readerState, nodeState),
+      () => this.checkJourneyPattern(condition, readerState)
+    ];
+
+    return basicChecks.every(check => check());
+  }
+
+  /**
+   * Evaluate advanced PathAnalyzer-based conditions
+   */
+  private evaluateAdvancedConditions(
+    condition: TransformationCondition,
+    readerState: ReaderState,
+    nodeState: NodeState
+  ): boolean {
+    const advancedChecks = [
+      () => !condition.characterFocus || this.checkCharacterFocus(condition.characterFocus, readerState, nodeState),
+      () => !condition.temporalFocus || this.checkTemporalFocus(condition.temporalFocus, readerState, nodeState),
+      () => !condition.attractorAffinity || this.checkAttractorAffinity(condition.attractorAffinity, readerState, nodeState),
+      () => !condition.attractorEngagement || this.checkAttractorEngagement(condition.attractorEngagement, readerState, nodeState),
+      () => !condition.recursivePattern || this.checkRecursivePattern(condition.recursivePattern, readerState, nodeState),
+      () => !condition.journeyFingerprint || this.checkJourneyFingerprint(condition.journeyFingerprint, readerState, nodeState)
+    ];
+
+    return advancedChecks.every(check => check());
+  }
+
+  /**
+   * Individual condition check methods
+   */
+  private checkVisitCount(condition: TransformationCondition, nodeState: NodeState): boolean {
+    return condition.visitCount === undefined || nodeState.visitCount >= condition.visitCount;
+  }
+
+  private checkPreviouslyVisitedNodes(condition: TransformationCondition, readerState: ReaderState): boolean {
+    if (!condition.previouslyVisitedNodes?.length) return true;
     
-    // 1. Visit count condition
-    if (condition.visitCount !== undefined) {
-      if (nodeState.visitCount < condition.visitCount) return false;
+    const visitedNodes = readerState.path.sequence || [];
+    return condition.previouslyVisitedNodes.every(nodeId => visitedNodes.includes(nodeId));
+  }
+
+  private checkVisitPattern(condition: TransformationCondition, readerState: ReaderState): boolean {
+    return !condition.visitPattern?.length || 
+           this.matchesPattern(condition.visitPattern, readerState.path.sequence);
+  }
+
+  private checkStrangeAttractors(condition: TransformationCondition, readerState: ReaderState): boolean {
+    return !condition.strangeAttractorsEngaged?.length || 
+           this.checkAttractorsEngaged(condition.strangeAttractorsEngaged, readerState);
+  }
+
+  private checkTemporalPosition(condition: TransformationCondition, nodeState: NodeState): boolean {
+    return !condition.temporalPosition || 
+           this.getNodeTemporalPosition(nodeState) === condition.temporalPosition;
+  }
+
+  private checkEndpointProgress(condition: TransformationCondition, readerState: ReaderState): boolean {
+    if (!condition.endpointProgress) return true;
+    
+    const { orientation, minValue } = condition.endpointProgress;
+    return readerState.endpointProgress?.[orientation] >= minValue;
+  }
+
+  private checkRevisitPattern(condition: TransformationCondition, readerState: ReaderState): boolean {
+    if (!condition.revisitPattern?.length) return true;
+    
+    const revisitPatterns = readerState.path.revisitPatterns || {};
+    return condition.revisitPattern.every(pattern => {
+      const visits = revisitPatterns[pattern.nodeId] || 0;
+      return visits >= pattern.minVisits;
+    });
+  }
+
+  private checkCharacterBleed(condition: TransformationCondition, readerState: ReaderState, nodeState: NodeState): boolean {
+    return !condition.characterBleed || this.hasCharacterBleed(readerState, nodeState);
+  }
+
+  private checkJourneyPattern(condition: TransformationCondition, readerState: ReaderState): boolean {
+    return !condition.journeyPattern?.length || 
+           this.matchesJourneyPattern(condition.journeyPattern, readerState.path.sequence);
+  }
+
+  /**
+   * Renamed for clarity - checks if there is character bleed
+   */
+  private hasCharacterBleed(readerState: ReaderState, nodeState: NodeState): boolean {
+    if (!readerState.path.detailedVisits || readerState.path.detailedVisits.length < 2) {
+      return false;
     }
     
-    // 2. Previously visited nodes condition
-    if (condition.previouslyVisitedNodes?.length) {
-      const visitedNodes = readerState.path.sequence || [];
-      if (!condition.previouslyVisitedNodes.every(nodeId =>
-        visitedNodes.includes(nodeId))) {
-        return false;
-      }
-    }
-    
-    // 3. Visit pattern condition
-    if (condition.visitPattern?.length) {
-      if (!this.matchesPattern(condition.visitPattern, readerState.path.sequence)) {
-        return false;
-      }
-    }
-    
-    // 4. Strange attractors condition
-    if (condition.strangeAttractorsEngaged?.length) {
-      if (!this.checkAttractorsEngaged(
-        condition.strangeAttractorsEngaged, 
-        readerState
-      )) {
-        return false;
-      }
-    }
-    
-    // 5. Temporal position condition
-    if (condition.temporalPosition) {
-      const nodeTemporalPosition = this.getNodeTemporalPosition(nodeState);
-      if (nodeTemporalPosition !== condition.temporalPosition) {
-        return false;
-      }
-    }
-    
-    // 6. Endpoint progress condition
-    if (condition.endpointProgress) {
-      const { orientation, minValue } = condition.endpointProgress;
-      if (!readerState.endpointProgress || readerState.endpointProgress[orientation] < minValue) {
-        return false;
-      }
-    }
-      // 8. Revisit pattern condition
-    if (condition.revisitPattern?.length) {
-      for (const pattern of condition.revisitPattern) {
-        const revisitPatterns = readerState.path.revisitPatterns || {};
-        const visits = revisitPatterns[pattern.nodeId] || 0;
-        if (visits < pattern.minVisits) {
-          return false;
-        }
-      }
-    }
-    
-    // 9. Character bleed condition
-    if (condition.characterBleed) {
-      if (!this.checkCharacterBleed(readerState, nodeState)) {
-        return false;
-      }
-    }
-      // 10. Journey pattern condition
-    if (condition.journeyPattern?.length) {
-      if (!this.matchesJourneyPattern(condition.journeyPattern, readerState.path.sequence)) {
-        return false;
-      }
-    }
-    
-    // 11. Character focus condition
-    if (condition.characterFocus) {
-      if (!this.checkCharacterFocus(condition.characterFocus, readerState, nodeState)) {
-        return false;
-      }
-    }
-    
-    // 12. Temporal focus condition
-    if (condition.temporalFocus) {
-      if (!this.checkTemporalFocus(condition.temporalFocus, readerState, nodeState)) {
-        return false;
-      }
-    }
-    
-    // 13. Attractor affinity condition
-    if (condition.attractorAffinity) {
-      if (!this.checkAttractorAffinity(condition.attractorAffinity, readerState, nodeState)) {
-        return false;
-      }
-    }
-    
-    // 14. Attractor engagement condition
-    if (condition.attractorEngagement) {
-      if (!this.checkAttractorEngagement(condition.attractorEngagement, readerState, nodeState)) {
-        return false;
-      }
-    }
-    
-    // 15. Recursive pattern condition
-    if (condition.recursivePattern) {
-      if (!this.checkRecursivePattern(condition.recursivePattern, readerState, nodeState)) {
-        return false;
-      }
-    }
-    
-    // 16. Journey fingerprint condition
-    if (condition.journeyFingerprint) {
-      if (!this.checkJourneyFingerprint(condition.journeyFingerprint, readerState, nodeState)) {
-        return false;
-      }
-    }
-    
-    // Cache the result before returning
-    this.conditionCache.put(cacheKey, true);
-    
-    // If all conditions pass (or no conditions were specified), return true
-    return true;
+    const previousVisit = readerState.path.detailedVisits[readerState.path.detailedVisits.length - 2];
+    return previousVisit.character !== nodeState.character;
   }
   
   /**
@@ -540,25 +542,7 @@ export class TransformationEngine {
    */
   private getNodeTemporalPosition(node: NodeState): TemporalLabel {
     if (node.temporalValue <= 3) return 'past';
-    if (node.temporalValue <= 6) return 'present';
-    return 'future';
-  }
-  
-  /**
-   * Checks if there is character bleed - when the previous visited node
-   * had a different character than the current node
-   */
-  private checkCharacterBleed(readerState: ReaderState, nodeState: NodeState): boolean {
-    // Check if we have detailed visits and at least 2 visits
-    if (!readerState.path.detailedVisits || readerState.path.detailedVisits.length < 2) {
-      return false;
-    }
-    
-    // Get the second-to-last visit (previous visit)
-    const previousVisit = readerState.path.detailedVisits[readerState.path.detailedVisits.length - 2];
-    
-    // Compare the character of the previous visit with the current node's character
-    return previousVisit.character !== nodeState.character;
+    if (node.temporalValue <= 6) return 'present';    return 'future';
   }
   
   /**

@@ -447,9 +447,10 @@ export class CharacterBleedService {
     const firstSentence = sentences[0]?.trim();
     return firstSentence && firstSentence.length > 10 ? firstSentence : null;
   }
-  
-  /**
+    /**
    * Generates a random timestamp for temporal displacement effects
+   * Note: Uses Math.random() which is safe here since this is purely for 
+   * visual/narrative effects, not security-sensitive operations
    */
   private static getRandomTimestamp(): string {
     const timestamps = [
