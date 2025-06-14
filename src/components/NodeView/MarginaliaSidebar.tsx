@@ -70,9 +70,24 @@ const MarginaliaSidebar: React.FC<MarginaliaSidebarProps> = ({
     }
   }, [nodeId]);
   
+  // Keyboard handler for toggle and attractor items
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>, action: () => void) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      action();
+    }
+  };
+
   return (
     <div className={`marginalia-sidebar ${visible ? 'visible' : ''}`}>
-      <div className="marginalia-toggle" onClick={toggleSidebar}>
+      <div
+        className="marginalia-toggle"
+        onClick={toggleSidebar}
+        onKeyDown={e => handleKeyDown(e, toggleSidebar)}
+        tabIndex={0}
+        role="button"
+        aria-label={visible ? 'Close marginalia sidebar' : 'Open marginalia sidebar'}
+      >
         {visible ? '›' : '‹'}
       </div>
 
@@ -108,6 +123,10 @@ const MarginaliaSidebar: React.FC<MarginaliaSidebarProps> = ({
                   key={attractor}
                   className="strange-attractor-item"
                   onClick={() => handleAttractorClick(attractor)}
+                  onKeyDown={e => handleKeyDown(e, () => handleAttractorClick(attractor))}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`Engage attractor ${formatAttractorName(attractor)}`}
                 >
                   {formatAttractorName(attractor)}
                 </div>
