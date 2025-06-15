@@ -77,40 +77,27 @@ const NodeView = () => {
   const selectedNodeId = useSelector(selectSelectedNodeId);
   const viewMode = useSelector(selectViewMode);
   const node = useSelector((state: RootState) => selectedNodeId ? selectNodeById(state, selectedNodeId) : null);
-  // Extract stable primitives for hooks
 
-  // Get unique view key from ViewManager to force proper unmount/remount
   const uniqueViewKey = useMemo(() => viewManager.getUniqueViewKey(), []);
 
-  // State to control transition between ReactMarkdown and NarramorphRenderer
   const [useNarramorph, setUseNarramorph] = useState(false);
-  
-  // Add fallback state for handling WebGL context loss
   const [useWebGLFallback, setUseWebGLFallback] = useState(false);
-  
-  // Track if simple renderer has been forced
-  const [forceSimpleRenderer, setForceSimpleRenderer] = useState(true); // FORCE SIMPLE RENDERER TO STOP INFINITE LOOPS
-  
-  // Track if WebGL is available for this view (determined by context manager)
+  const [forceSimpleRenderer, setForceSimpleRenderer] = useState(true);
   const webGLAvailable = true;
-  
-  // Reference to content container for visibility debugging
+
   const contentContainerRef = useRef<HTMLDivElement>(null);
   const renderCompleteCalledRef = useRef(false);
   const processedNodeRef = useRef<string | null>(null);
   const narramorphActivatedRef = useRef(false);
-  // Track last visited node ID to ensure breadcrumb effect runs once per distinct node
   const lastVisitedIdRef = useRef<string | null>(null);
 
-  // Create a state to track view transitions
   const [viewTransitionState, setViewTransitionState] = useState({
     transitionTime: Date.now(),
     lastViewMode: viewMode,
     transitionCount: 0,
     renderCount: 0
   });
-  
-  // Track memory usage
+
   const [memoryStats, setMemoryStats] = useState({
     jsHeapSizeLimit: 0,
     totalJSHeapSize: 0,
@@ -118,28 +105,18 @@ const NodeView = () => {
     timestamp: 0
   });
 
-  // Define onVisibilityChange using useCallback
   const onVisibilityChange = useCallback((isVisible: boolean) => {
     console.log(`[NodeView] Content visibility changed to: ${isVisible ? 'visible' : 'hidden'}`);
 
-    // BUGFIX: If visibility changes to hidden, force it back to visible
     if (!isVisible && contentContainerRef.current) {
       console.warn('[NodeView] Forcing content visibility after hidden state detected');
       contentContainerRef.current.style.display = 'block';
       contentContainerRef.current.style.visibility = 'visible';
       contentContainerRef.current.style.opacity = '1';
-
-      // Don't update debug state to indicate an issue
       return;
     }
-
-    // Only update debug state once to prevent render loops
-    if (!renderCompleteCalledRef.current) {
-      setContentDebug(prev => ({ ...prev, visibilityIssue: !isVisible }));
-    }
   }, []);
-  
-  // Debug state to track content status
+
   const [contentDebug, setContentDebug] = useState({
     loadStarted: false,
     contentLoaded: false,
@@ -149,18 +126,15 @@ const NodeView = () => {
     errorOccurred: false
   });
 
-  // Define onRenderComplete using useCallback to memoize it
   const onRenderComplete = useCallback(() => {
-    // Prevent multiple calls to this function
     if (renderCompleteCalledRef.current) {
       console.log('[NodeView] Skipping duplicate onRenderComplete call');
       return;
     }
-    
+
     renderCompleteCalledRef.current = true;
     console.log('[NodeView] SimpleTextRenderer completed rendering');
 
-    // BUGFIX: Ensure content remains visible after render
     if (contentContainerRef.current) {
       console.log('[NodeView] Forcing container visibility after render complete');
       contentContainerRef.current.style.display = 'block';
@@ -170,7 +144,6 @@ const NodeView = () => {
 
     setContentDebug(prev => ({ ...prev, visibilityIssue: false }));
 
-    // BUGFIX: Set a verification check after render
     setTimeout(() => {
       if (contentContainerRef.current) {
         const isStillVisible =
@@ -190,7 +163,6 @@ const NodeView = () => {
     }, 500);
   }, []);
 
-  // Reset callback flags when node changes
   useEffect(() => {
     if (selectedNodeId !== processedNodeRef.current) {
       renderCompleteCalledRef.current = false;
@@ -199,12 +171,11 @@ const NodeView = () => {
     }
   }, [selectedNodeId]);
 
-  // Effect to track view transitions and manage render count
   useEffect(() => {
     if (viewTransitionState.lastViewMode !== viewMode) {
       const now = Date.now();
       console.log(`[NodeView] View transition: ${viewTransitionState.lastViewMode} -> ${viewMode} at ${now}`);
-      
+
       setViewTransitionState(prev => ({
         ...prev,
         lastViewMode: viewMode,
@@ -212,19 +183,16 @@ const NodeView = () => {
         transitionCount: prev.transitionCount + 1,
         renderCount: prev.renderCount + 1
       }));
-      
-      // Reset content debug state on transition
-      setContentDebug(prev => ({
-        ...prev,
+
+      setContentDebug({
         loadStarted: false,
         contentLoaded: false,
         renderStarted: false,
         narramorphActivated: false,
         visibilityIssue: false,
         errorOccurred: false
-      }));
-      
-      // Collect memory stats on transition
+      });
+
       if (hasMemory(performance) && performance.memory) {
         const memory = performance.memory;
         setMemoryStats({
@@ -235,17 +203,14 @@ const NodeView = () => {
         });
       }
     } else {
-      // Increment render count on each render without transition
       setViewTransitionState(prev => ({
         ...prev,
         renderCount: prev.renderCount + 1
       }));
     }
   }, [viewMode, viewTransitionState.lastViewMode]);
-  
-  // Effect to load content if needed - CRITICAL FIX to prevent infinite loops
+
   useEffect(() => {
-    // Only check if we need to load content, don't depend on the content itself
     const needsContent = selectedNodeId && !node?.content;
     if (needsContent) {
       console.log(`[NodeView] Loading content for node: ${selectedNodeId}`, {
@@ -256,10 +221,8 @@ const NodeView = () => {
     }
   }, [selectedNodeId, dispatch, viewMode, node?.content]);
 
-  // Create stable values for dependencies to prevent hook warnings
   const contentLength = node?.currentContent?.length || 0;
-  
-  // Create stable derived values to avoid dependency on full content string
+
   const contentCorrupted = useMemo(() => {
     if (!node?.currentContent) return false;
     return (
@@ -268,29 +231,26 @@ const NodeView = () => {
       node.currentContent.length < 10
     );
   }, [node?.currentContent]);
-  
+
   const contentPreview = useMemo(() => {
     return node?.currentContent?.substring(0, 50) || 'NO CONTENT';
   }, [node?.currentContent]);
 
-
-  // Separate effect for content loaded debugging - SIMPLIFIED to prevent loops
   useEffect(() => {
     if (node?.id && processedNodeRef.current === selectedNodeId) {
-      const hasCurrentContent = contentLength > 0; // Use contentLength instead of !!node.currentContent
-      
+      const hasCurrentContent = contentLength > 0;
+
       console.log(`[NodeView] Content processed for node: ${selectedNodeId}`, {
         hasContent: hasCurrentContent,
         visitCount: node.visitCount,
         contentLength,
-        contentPreview, // Use the stable derived value
+        contentPreview,
         enhancedContentExists: !!node.enhancedContent,
         contentExists: !!node.content
       });
-      
+
       setContentDebug(prev => ({ ...prev, contentLoaded: hasCurrentContent }));
-      
-      // Use the stable derived value for corruption check
+
       if (hasCurrentContent && contentCorrupted) {
         console.error(`[NodeView] Possible content corruption detected:`, {
           contentStart: contentPreview,
@@ -299,48 +259,39 @@ const NodeView = () => {
       }
     }
   }, [
-    selectedNodeId, 
-    node?.id, 
-    node?.visitCount, 
+    selectedNodeId,
+    node?.id,
+    node?.visitCount,
     node?.content,
     node?.enhancedContent,
-    contentLength, 
+    contentLength,
     contentPreview,
     contentCorrupted
   ]);
 
-  // Preload components and enable Narramorph transformations after content is loaded
   useEffect(() => {
-    // Only check if node has content, don't depend on content value to prevent loops
     if (node?.id && contentLength > 0 && !narramorphActivatedRef.current) {
       console.log(`[NodeView] Preparing to activate Narramorph for node: ${node.id}`, {
         viewMode,
         hasContent: contentLength > 0
       });
       setContentDebug(prev => ({ ...prev, renderStarted: true }));
-      
-      // Mark as activated to prevent repeated calls
+
       narramorphActivatedRef.current = true;
-      
-      // First ensure NarramorphRenderer is loaded before enabling it
-      // This prevents the race condition between component loading and state changes
+
       let componentLoaded = false;
-      
-      // Start preloading the component immediately
+
       console.log('[NodeView] Preloading NarramorphRenderer component');
       NarramorphRendererPromise.then(() => {
         componentLoaded = true;
         console.log('[NodeView] NarramorphRenderer preload complete');
-        
-        // Only proceed if we still have the same node content (prevent stale closure issues)
+
         if (node?.id) {
           console.log(`[NodeView] Activating Narramorph renderer for node: ${node.id} after preload`);
-          
-          // Now it's safe to enable the component
+
           setUseNarramorph(true);
           setContentDebug(prev => ({ ...prev, narramorphActivated: true }));
-          
-          // Check DOM state after enabling
+
           if (contentContainerRef.current) {
             const preBoundingRect = contentContainerRef.current.getBoundingClientRect();
             console.log('[NodeView] Post-preload container dimensions:', {
@@ -353,18 +304,16 @@ const NodeView = () => {
         }
       }).catch(err => {
         console.error('[NodeView] Error preloading NarramorphRenderer:', err);
-        // Force simple renderer on error
         setForceSimpleRenderer(true);
       });
-      
-      // Set up visibility check that runs after components should be loaded and rendered
+
       const visibilityTimer = setTimeout(() => {
         if (contentContainerRef.current) {
           console.log('[NodeView] Force checking content visibility');
           const isVisible = contentContainerRef.current.offsetParent !== null;
           const boundingRect = contentContainerRef.current.getBoundingClientRect();
           const computedStyle = window.getComputedStyle(contentContainerRef.current);
-          
+
           console.log('[NodeView] Content visibility check:', {
             isVisible,
             width: boundingRect.width,
@@ -376,52 +325,49 @@ const NodeView = () => {
             opacity: computedStyle.opacity,
             componentLoaded
           });
-          
-          // If content isn't visible or has zero dimensions
+
           if (!isVisible || boundingRect.width === 0 || boundingRect.height === 0) {
             console.warn('[NodeView] Content invisible after rendering - forcing simple renderer');
             setForceSimpleRenderer(true);
             setContentDebug(prev => ({ ...prev, visibilityIssue: true }));
           }
         }
-      }, 1500); // Increased timeout to allow more time for loading
-      
+      }, 1500);
+
       return () => clearTimeout(visibilityTimer);
     }
-    return undefined; // Explicit return for when condition is false
+    return undefined;
   }, [contentLength, node?.id, viewMode]);
-  
-  // Effect to track node visits and breadcrumb history – fires once per unique node ID
+
   useEffect(() => {
     if (!node?.id || node.id === lastVisitedIdRef.current) return;
 
-    // Increment visit count for analytics
-    dispatch(visitNode(node.id));    // Create a plain-text synopsis from current content (first 100 chars)
+    dispatch(visitNode(node.id));
+    // Create a plain-text synopsis from current content (first 100 chars)
+    // Use refs or stable values to avoid adding node.currentContent and node.title to dependencies
+    const currentContent = node.currentContent ?? '';
+    const title = node.title ?? '';
+
     const synopsis =
-      (node.currentContent ?? '')
+      currentContent
         .replace(/<[^>]*>/g, '')
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 100);
 
-    // Add breadcrumb / visited node entry
     dispatch(
       addVisitedNode({
         id: node.id,
-        title: node.title ?? '',
+        title,
         synopsis,
       }),
     );
 
-    // Update ref to prevent duplicate processing
     lastVisitedIdRef.current = node.id;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dispatch, node?.id]);
-  
-  // Handle WebGL context loss errors
+  }, [dispatch, node?.id, node?.currentContent, node?.title]);
+
   useEffect(() => {
     const handleWebGLContextLoss = (event: ErrorEvent) => {
-      // Check if this is a WebGL context loss error
       if (event.message &&
          (event.message.includes('WebGL context lost') ||
           event.message.includes('THREE.WebGLRenderer'))) {
@@ -432,13 +378,11 @@ const NodeView = () => {
           timeElapsed: Date.now() - viewTransitionState.transitionTime + 'ms',
           renderCount: viewTransitionState.renderCount
         });
-        
-        // Set fallback mode to use ReactMarkdown instead
+
         setUseWebGLFallback(true);
         setUseNarramorph(false);
         setContentDebug(prev => ({ ...prev, errorOccurred: true }));
-        
-        // Collect memory stats on error
+
         if (hasMemory(performance) && performance.memory) {
           const memory = performance.memory;
           setMemoryStats({
@@ -447,7 +391,7 @@ const NodeView = () => {
             usedJSHeapSize: memory.usedJSHeapSize,
             timestamp: Date.now()
           });
-          
+
           console.log(`[NodeView] Memory usage at WebGL error:`, {
             usedHeap: Math.round(memory.usedJSHeapSize / (1024 * 1024)) + 'MB',
             totalHeap: Math.round(memory.totalJSHeapSize / (1024 * 1024)) + 'MB',
@@ -456,16 +400,14 @@ const NodeView = () => {
         }
       }
     };
-    
-    // Listen for error events that might indicate WebGL issues
+
     window.addEventListener('error', handleWebGLContextLoss);
-    
+
     return () => {
       window.removeEventListener('error', handleWebGLContextLoss);
     };
   }, [viewMode, viewTransitionState.renderCount, viewTransitionState.transitionTime]);
-  
-  // Handle return to constellation view
+
   const handleReturnToConstellation = () => {
     dispatch(returnToConstellation());
   };
