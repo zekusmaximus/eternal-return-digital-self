@@ -736,6 +736,98 @@ export class TransformationService {
   }
   
   /**
+   * Create transformation(s) for a visitPattern condition
+   */
+  private handleVisitPattern(condition: import('./PathAnalyzer').PatternBasedCondition, nodeState: NodeState): TextTransformation[] {
+    const transformations: TextTransformation[] = [];
+    if (condition.strength > 0.8 && nodeState.currentContent) {
+      const paragraphs = nodeState.currentContent.split('\n\n');
+      if (paragraphs.length > 1) {
+        transformations.push({
+          type: 'replace',
+          selector: paragraphs[1],
+          replacement: `${paragraphs[1]} [A recurring pattern emerges in your exploration]`,
+          priority: 'high'
+        });
+      }
+    }
+    return transformations;
+  }
+
+  /**
+   * Create transformation(s) for a characterFocus condition
+   */
+  private handleCharacterFocus(condition: import('./PathAnalyzer').PatternBasedCondition, nodeState: NodeState): TextTransformation[] {
+    const transformations: TextTransformation[] = [];
+    if (
+      condition.strength > 0.7 &&
+      condition.condition.characters?.[0] === nodeState.character &&
+      nodeState.currentContent
+    ) {
+      const paragraphs = nodeState.currentContent.split('\n\n');
+      if (paragraphs.length > 0) {
+        transformations.push({
+          type: 'emphasize',
+          selector: paragraphs[0],
+          emphasis: 'color',
+          priority: 'medium'
+        });
+      }
+    }
+    return transformations;
+  }
+
+  /**
+   * Create transformation(s) for a temporalFocus condition
+   */
+  private handleTemporalFocus(condition: import('./PathAnalyzer').PatternBasedCondition, nodeState: NodeState): TextTransformation[] {
+    const transformations: TextTransformation[] = [];
+    if (
+      condition.strength > 0.7 &&
+      condition.condition.temporalPosition &&
+      nodeState.currentContent
+    ) {
+      const temporalLayer = nodeState.temporalValue <= 3 ? 'past' : nodeState.temporalValue <= 6 ? 'present' : 'future';
+      if (temporalLayer === condition.condition.temporalPosition) {
+        const paragraphs = nodeState.currentContent.split('\n\n');
+        if (paragraphs.length > 2) {
+          transformations.push({
+            type: 'metaComment',
+            selector: paragraphs[2],
+            replacement: `You seem drawn to ${condition.condition.temporalPosition} narratives`,
+            priority: 'low'
+          });
+        }
+      }
+    }
+    return transformations;
+  }
+
+  /**
+   * Create transformation(s) for attractorAffinity or attractorEngagement condition
+   */
+  private handleAttractorEngagement(condition: import('./PathAnalyzer').PatternBasedCondition, nodeState: NodeState): TextTransformation[] {
+    const transformations: TextTransformation[] = [];
+    if (
+      condition.strength > 0.7 &&
+      condition.condition.strangeAttractorsEngaged?.[0] &&
+      nodeState.currentContent
+    ) {
+      const attractor = condition.condition.strangeAttractorsEngaged[0];
+      const paragraphs = nodeState.currentContent.split('\n\n');
+      if (paragraphs.length > 0 && nodeState.strangeAttractors.includes(attractor)) {
+        transformations.push({
+          type: 'expand',
+          selector: paragraphs[0],
+          replacement: `The concept of ${attractor.replace('-', ' ')} resonates with you.`,
+          priority: 'high'
+        });
+      }
+    }
+    return transformations;
+  }
+
+  /**
    * Create a set of transformations based on reader patterns
    * With caching and optimization
    */
@@ -744,146 +836,57 @@ export class TransformationService {
     nodeState: NodeState
   ): TextTransformation[] {
     this.metrics.patternAnalysisCount++;
-    
-    // Create cache key for pattern-based transformations
     const patternHash = this.calculatePatternHash(readerState);
     const cacheKey = `patterns-${nodeState.id}-${nodeState.visitCount}-${patternHash}`;
-    
-    // Check cache first
     if (this.cache[cacheKey] && this.cache[cacheKey].transformations) {
       this.metrics.cacheHits++;
       return this.cache[cacheKey].transformations;
     }
-    
     this.metrics.cacheMisses++;
-    
-    // Get visibility status for lazy evaluation
     const isNodeVisible = this.visibilityTracker[nodeState.id]?.isVisible || false;
-      // Only perform expensive pattern analysis if the node is visible
-    // or if it's the first time analyzing this node
     if (!isNodeVisible && nodeState.visitCount > 1) {
-      // Return minimal transformations for non-visible content
       const minimalTransformations: TextTransformation[] = [];
-      
-      // Cache this result with a shorter expiry
       this.cache[cacheKey] = {
         transformations: minimalTransformations,
-        timestamp: Date.now() - (this.CACHE_EXPIRY_TIME / 2), // Shorter expiry
+        timestamp: Date.now() - (this.CACHE_EXPIRY_TIME / 2),
         content: ''
       };
-      
       return minimalTransformations;
     }
-
-    // Get patterns from the path analyzer - expensive operation
     const patterns = pathAnalyzer.identifySignificantPatterns(readerState, {
       [nodeState.id]: nodeState
     });
-
-    // Get attractor engagements - another expensive operation
     const attractorEngagements = pathAnalyzer.calculateAttractorEngagement(readerState, {
       [nodeState.id]: nodeState
     });
-
-    // Create transformation conditions from patterns
     const patternConditions = pathAnalyzer.createTransformationConditions(
       patterns,
       attractorEngagements
     );
-
-    // Convert pattern conditions to text transformations (LIMIT TO PREVENT EXCESSIVE TRANSFORMATIONS)
     const transformations: TextTransformation[] = [];
-    const maxPatternTransformations = 2; // Limit pattern transformations
-
-    // Add priority field to transformations for later optimization
-    
+    const maxPatternTransformations = 2;
     patternConditions.slice(0, maxPatternTransformations).forEach(condition => {
-      // We'll create different transformation types based on the pattern type
+      let result: TextTransformation[] = [];
       switch (condition.type) {
         case 'visitPattern':
-          // Repeated sequence patterns could trigger text replacements
-          if (condition.strength > 0.8 && nodeState.currentContent) {
-            // Extract a significant paragraph to transform
-            const paragraphs = nodeState.currentContent.split('\n\n');
-            if (paragraphs.length > 1) {
-              transformations.push({
-                type: 'replace',
-                selector: paragraphs[1],
-                replacement: `${paragraphs[1]} [A recurring pattern emerges in your exploration]`,
-                priority: 'high'
-              });
-            }
-          }
+          result = this.handleVisitPattern(condition, nodeState);
           break;
-          
         case 'characterFocus':
-          // Character focus could trigger emphasis of character-specific content
-          if (condition.strength > 0.7 && 
-              condition.condition.characters?.[0] === nodeState.character &&
-              nodeState.currentContent) {
-            // Find character-specific content to emphasize
-            const paragraphs = nodeState.currentContent.split('\n\n');
-            if (paragraphs.length > 0) {
-              transformations.push({
-                type: 'emphasize',
-                selector: paragraphs[0],
-                emphasis: 'color',
-                priority: 'medium'
-              });
-            }
-          }
+          result = this.handleCharacterFocus(condition, nodeState);
           break;
-          
         case 'temporalFocus':
-          // Temporal focus could trigger meta-commentary
-          if (condition.strength > 0.7 && 
-              condition.condition.temporalPosition && 
-              nodeState.currentContent) {
-            const temporalLayer = nodeState.temporalValue <= 3 ? 'past' : 
-                                 nodeState.temporalValue <= 6 ? 'present' : 'future';
-                                 
-            if (temporalLayer === condition.condition.temporalPosition) {
-              // Find temporal-related content
-              const paragraphs = nodeState.currentContent.split('\n\n');
-              if (paragraphs.length > 2) {
-                transformations.push({
-                  type: 'metaComment',
-                  selector: paragraphs[2],
-                  replacement: `You seem drawn to ${condition.condition.temporalPosition} narratives`,
-                  priority: 'low' // Comments are less essential
-                });
-              }
-            }
-          }
+          result = this.handleTemporalFocus(condition, nodeState);
           break;
-          
         case 'readingRhythm':
-          // Reading rhythm transformations removed (previously time-based)
+          // No-op
           break;
-          
         case 'attractorAffinity':
         case 'attractorEngagement':
-          // Attractor engagement affects content expansion
-          if (condition.strength > 0.7 && 
-              condition.condition.strangeAttractorsEngaged?.[0] &&
-              nodeState.currentContent) {
-            // Find attractor-related content
-            const attractor = condition.condition.strangeAttractorsEngaged[0];
-            const paragraphs = nodeState.currentContent.split('\n\n');
-            
-            if (paragraphs.length > 0 && 
-                nodeState.strangeAttractors.includes(attractor)) {
-              transformations.push({
-                type: 'expand',
-                selector: paragraphs[0],
-                replacement: `The concept of ${attractor.replace('-', ' ')} resonates with you.`,
-                priority: 'high' // Attractor-related content is important
-              });
-            }
-          }
+          result = this.handleAttractorEngagement(condition, nodeState);
           break;
-      }    });
-    
+      }
+      transformations.push(...result);
+    });
     return transformations;
   }
   /**
