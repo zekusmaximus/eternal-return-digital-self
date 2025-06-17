@@ -161,6 +161,151 @@ const getNodeColor = (character: string | undefined): Color => {
   return new Color('#ffffff');
 };
 
+// Helper functions to reduce cognitive complexity
+
+// Check if a node is a designated starting node
+const isDesignatedStartingNode = (node: ConstellationNode): boolean => {
+  return node.contentSource === 'arch-discovery.md' ||
+         node.contentSource === 'algo-awakening.md' ||
+         node.contentSource === 'human-discovery.md';
+};
+
+// Get label text for designated starting nodes
+const getStartingNodeLabel = (node: ConstellationNode): string => {
+  if (node.contentSource === 'arch-discovery.md') return 'The Archaeologist';
+  if (node.contentSource === 'algo-awakening.md') return 'The Algorithm';
+  if (node.contentSource === 'human-discovery.md') return 'The Last Human';
+  return '';
+};
+
+// Get triumvirate text for nodes
+const getTriumvirateText = (nodeId: string): string => {
+  if (nodeId === 'arch-discovery') return 'Discovery';
+  if (nodeId === 'algo-awakening') return 'Awakening';
+  if (nodeId === 'human-discovery') return 'Choice';
+  return '';
+};
+
+// Determine if a node is clickable based on current state
+const isNodeClickable = (
+  node: ConstellationNode,
+  isDesignatedStarting: boolean,
+  triumvirateActive: boolean,
+  triumvirateNodeSet: Set<string>,
+  isInitialChoicePhase: boolean,
+  connections: { start: string; end: string }[],
+  onNodeClick?: (nodeId: string) => void,
+  clickableNodeIds?: string[],
+  selectedNodeId?: string | null
+): boolean => {
+  if (triumvirateActive) {
+    return triumvirateNodeSet.has(node.id);
+  }
+  
+  if (isInitialChoicePhase) {
+    return isDesignatedStarting;
+  }
+  
+  if (onNodeClick) {
+    return !clickableNodeIds || clickableNodeIds.includes(node.id);
+  }
+  
+  if (selectedNodeId === null) {
+    return true;
+  }
+  
+  return connections.some(
+    (c) => (c.start === selectedNodeId && c.end === node.id) ||
+           (c.start === node.id && c.end === selectedNodeId)
+  );
+};
+
+// Handle node navigation actions
+const handleNodeNavigation = (
+  dispatch: AppDispatch,
+  node: ConstellationNode
+): void => {
+  dispatch(nodeSelected(node.id));
+  dispatch(visitNode(node.id));
+  dispatch(setViewMode('reading'));
+  dispatch(navigateToNode({
+    nodeId: node.id,
+    character: node.character,
+    temporalValue: node.temporalValue,
+    attractors: node.strangeAttractors,
+  }));
+};
+
+// Update node scaling with pulsing effect
+const updateNodeScaling = (
+  nodeMesh: THREE.Mesh,
+  isPulsingNode: boolean,
+  time: number,
+  isMinimap?: boolean
+): void => {
+  if (isPulsingNode) {
+    const pulseSpeed = 3;
+    const pulseAmount = 0.15;
+    const baseScale = 1.0;
+    const targetScale = baseScale + Math.sin(time * pulseSpeed) * pulseAmount;
+    nodeMesh.scale.set(targetScale, targetScale, targetScale);
+  } else {
+    const baseScale = isMinimap ? 0.5 : 1.0;
+    if (nodeMesh.scale.x !== baseScale || nodeMesh.scale.y !== baseScale || nodeMesh.scale.z !== baseScale) {
+      nodeMesh.scale.set(baseScale, baseScale, baseScale);
+    }
+  }
+};
+
+// Update material time uniforms
+const updateMaterialUniforms = (
+  materials: ShaderMaterial[],
+  time: number
+): void => {
+  materials.forEach(material => {
+    if (material?.uniforms?.time) {
+      material.uniforms.time.value = time;
+    }
+  });
+};
+
+// Update text billboard behavior
+const updateTextBillboards = (
+  textRefs: THREE.Object3D[],
+  camera: THREE.Camera
+): void => {
+  textRefs.forEach(text => {
+    if (text && text.visible) {
+      text.lookAt(camera.position);
+    }
+  });
+};
+
+// Helper function to handle node hover events
+const handleNodeHover = (
+  nodeId: string,
+  isClickable: boolean,
+  clientX: number,
+  clientY: number
+): void => {
+  const nodeHoverEvent = new CustomEvent('node-hover', {
+    detail: {
+      position: {
+        x: clientX,
+        y: clientY - 40
+      },
+      nodeId,
+      isClickable
+    }
+  });
+  window.dispatchEvent(nodeHoverEvent);
+};
+
+// Helper function to handle node unhover events
+const handleNodeUnhover = (): void => {
+  const nodeUnhoverEvent = new CustomEvent('node-unhover');
+  window.dispatchEvent(nodeUnhoverEvent);
+};
 
 export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((props, ref) => {
   const {
@@ -226,7 +371,69 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
   const frameCount = useRef(0);
   const lastUpdatePositionsTime = useRef(0);
   const lastUpdateMaterialsTime = useRef(0);
-  
+    // Separate function to handle material updates
+  const handleMaterialUpdates = (time: number): void => {
+    const shouldUpdateMaterials = time - lastUpdateMaterialsTime.current > 0.05; // 50ms
+    if (!shouldUpdateMaterials) return;
+
+    lastUpdateMaterialsTime.current = time;
+    
+    // Update time uniforms on important materials only
+    const importantMaterials = materialRefs.current.filter((_, i) => {
+      const node = nodes[i];
+      return node && (
+        node.id === selectedNodeId ||
+        node.id === hoveredNodeId ||
+        connections.some(c => c.start === node.id || c.end === node.id)
+      );
+    });
+    
+    updateMaterialUniforms(importantMaterials, time);
+    
+    // Update force field materials only for selected/hovered nodes
+    const importantForceFields = forceFieldMaterialRefs.current.filter((_, i) => {
+      const node = nodes[i];
+      return node && (node.id === selectedNodeId || node.id === hoveredNodeId);
+    });
+    
+    updateMaterialUniforms(importantForceFields, time);
+  };
+  // Separate function to handle node position and scale updates
+  const handleNodeUpdates = (time: number): void => {
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i];
+      const nodeMesh = nodeMeshRefs.current[i] as THREE.Mesh;
+      
+      if (!nodeMesh || !originalPositions.current[node.id]) {
+        continue;
+      }
+
+      // Determine if this node should pulse
+      const shouldPulse = isInitialChoicePhase && 
+                         !props.isMinimap && 
+                         isDesignatedStartingNode(node);
+
+      updateNodeScaling(nodeMesh, shouldPulse, time, props.isMinimap);
+      
+      const isImportantNode = node.id === selectedNodeId ||
+                             node.id === hoveredNodeId ||
+                             connectedNodeIds.has(node.id);
+      
+      // Always show the node
+      nodeMesh.visible = true;
+      nodeMesh.position.set(0, 0, 0);
+      
+      // Show force field only for important nodes
+      const forceMesh = forceFieldMeshRefs.current[i];
+      if (forceMesh) {
+        forceMesh.visible = isImportantNode;
+        if (isImportantNode) {
+          forceMesh.position.set(0, 0, 0);
+        }
+      }
+    }
+  };
+
   // Enhanced optimization: Using variable update rates based on priority
   useFrame((state): void => {
     const time = state.clock.elapsedTime;
@@ -234,43 +441,8 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
     
     // Get synchronized positions from the position synchronizer
     const currentPositions = positionSynchronizer.updatePositions(time, props.isMinimap);
-      
-    // All nodes are always visible, no need for validation
     
-    // Time-based throttling for shader updates
-    const shouldUpdateMaterials = time - lastUpdateMaterialsTime.current > 0.05; // 50ms
-    if (shouldUpdateMaterials) {
-      lastUpdateMaterialsTime.current = time;
-      
-      // Update time uniforms on important materials only
-      const importantMaterials = materialRefs.current.filter((_, i) => {
-        const node = nodes[i];
-        return node && (
-          node.id === selectedNodeId ||
-          node.id === hoveredNodeId ||
-          connections.some(c => c.start === node.id || c.end === node.id)
-        );
-      });
-      
-      // Batch updates to reduce overhead
-      importantMaterials.forEach(material => {
-        if (material?.uniforms?.time) {
-          material.uniforms.time.value = time;
-        }
-      });
-      
-      // Update force field materials only for selected/hovered nodes
-      const importantForceFields = forceFieldMaterialRefs.current.filter((_, i) => {
-        const node = nodes[i];
-        return node && (node.id === selectedNodeId || node.id === hoveredNodeId);
-      });
-      
-      importantForceFields.forEach(material => {
-        if (material?.uniforms?.time) {
-          material.uniforms.time.value = time;
-        }
-      });
-    }
+    handleMaterialUpdates(time);
     
     // SYNC FIX: Ensure we update positions on the same frames as ConnectionsBatched
     // This is critical for keeping nodes and connections aligned
@@ -278,106 +450,16 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
     // CRITICAL SYNC FIX: Use same update interval as ConnectionsBatched
     const UPDATE_INTERVAL = 0.15; // 150ms in seconds
     const shouldUpdatePositions = timeSinceLastPositionUpdate >= UPDATE_INTERVAL;
-    
-    if (shouldUpdatePositions) {
+      if (shouldUpdatePositions) {
       lastUpdatePositionsTime.current = time;
       
-      // Apply organic movement to nodes using noise - with optimized calculations
-      // And apply pulsing effect for designated starting nodes
-      for (let i = 0; i < nodes.length; i++) {
-        const node = nodes[i];
-        const nodeMesh = nodeMeshRefs.current[i] as THREE.Mesh; // Cast for scale property
-        
-        if (!nodeMesh) {
-          continue; // Skip if mesh doesn't exist
-        }
-        
-        const origPos = originalPositions.current[node.id];
-        if (!origPos) {
-          continue; // Skip if no original position
-        }
-
-        // Determine if this node is a designated starting node for pulsing logic
-        let isDesignatedStartingNodeForPulse = false;
-        if (isInitialChoicePhase && !props.isMinimap) { // Pulse only in main view during initial phase
-          if (node.contentSource === 'arch-discovery.md' ||
-              node.contentSource === 'algo-awakening.md' ||
-              node.contentSource === 'human-discovery.md') {
-            isDesignatedStartingNodeForPulse = true;
-          }
-        }
-
-        if (isDesignatedStartingNodeForPulse) {
-          const pulseSpeed = 3;
-          const pulseAmount = 0.15; // Scale pulsates between 0.85 and 1.15 approx.
-          const baseScale = 1.0;
-          const targetScale = baseScale + Math.sin(time * pulseSpeed) * pulseAmount;
-          nodeMesh.scale.set(targetScale, targetScale, targetScale);
-        } else {
-          // Ensure non-pulsing nodes (or minimap nodes, or when not in initial phase) have normal scale
-          const baseScale = props.isMinimap ? 0.5 : 1.0;
-          if (nodeMesh.scale.x !== baseScale || nodeMesh.scale.y !== baseScale || nodeMesh.scale.z !== baseScale) {
-            nodeMesh.scale.set(baseScale, baseScale, baseScale);
-          }
-        }
-        
-        // Always update all nodes
-        const shouldUpdate = true;
-        const isImportantNode = node.id === selectedNodeId ||
-                               node.id === hoveredNodeId ||
-                               connectedNodeIds.has(node.id);
-        
-        // Always show the node
-        nodeMesh.visible = true;
-        
-        // Show force field only for important nodes
-        const forceMesh = forceFieldMeshRefs.current[i];
-        if (forceMesh) {
-          forceMesh.visible = isImportantNode;
-        }
-            if (shouldUpdate) {
-          // CRITICAL FIX: Since groups are positioned, mesh stays at origin within group
-          const syncedPos = currentPositions[node.id];
-          
-          if (syncedPos) {
-            // Don't update mesh position - it's handled by group positioning in render
-            // Just ensure the mesh is visible and at origin within its group
-            nodeMesh.position.set(0, 0, 0);
-          } else {
-            // Fallback to original position if synchronized position is not available
-            console.warn(`NodesInstanced: Missing synchronized position for node ${node.id}`);
-            nodeMesh.position.set(0, 0, 0);
-          }
-          
-          // Update force field position only if it exists and node is important
-          const forceMesh = forceFieldMeshRefs.current[i];
-          if (forceMesh && isImportantNode) {
-            forceMesh.visible = true;
-            forceMesh.position.set(0, 0, 0); // Also at origin within group
-          } else if (forceMesh) {
-            forceMesh.visible = false;
-          }        }
-      }
+      handleNodeUpdates(time);
       
-      // Update text billboard behavior - make text always face camera
-      // Update both label text and triumvirate text to face the camera
-      for (let i = 0; i < nodes.length; i++) {
-        const labelText = labelTextRefs.current[i];
-        const triumvirateText = triumvirateTextRefs.current[i];
-        
-        if (labelText && labelText.visible) {
-          labelText.lookAt(camera.position);
-        }
-        
-        if (triumvirateText && triumvirateText.visible) {
-          triumvirateText.lookAt(camera.position);
-        }
-      }
+      // Update text billboard behavior - make text always face camera      updateTextBillboards(labelTextRefs.current, camera);
+      updateTextBillboards(triumvirateTextRefs.current, camera);
       
       // Update group positions for next render
       setGroupPositions({ ...currentPositions });
-      
-      // No need to update visible node count since we removed the display
     }
   });
   
@@ -400,64 +482,20 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
       {nodes.map((node, index) => {
         const isSelected = selectedNodeId === node.id;
         const isConnected = connectedNodeIds.has(node.id);
-        const isHovered = hoveredNodeId === node.id;        let isDesignatedStartingNode = false;
-        let labelText = '';
-        
-        if (isInitialChoicePhase) {
-          if (node.contentSource === 'arch-discovery.md') {
-            isDesignatedStartingNode = true;
-            labelText = 'The Archaeologist';
-          } else if (node.contentSource === 'algo-awakening.md') {
-            isDesignatedStartingNode = true;
-            labelText = 'The Algorithm';
-          } else if (node.contentSource === 'human-discovery.md') {
-            isDesignatedStartingNode = true;
-            labelText = 'The Last Human';
-          }
-        }
-        
-        // Add triumvirate text labels
-        let triumvirateText = '';
-        if (triumvirateActive && triumvirateNodes.includes(node.id)) {
-          if (node.id === 'arch-discovery') {
-            triumvirateText = 'Discovery';
-          } else if (node.id === 'algo-awakening') {
-            triumvirateText = 'Awakening';
-          } else if (node.id === 'human-discovery') {
-            triumvirateText = 'Choice';
-          }
-        }
-        
-        // Calculate node color using our more permissive function
-        const nodeColor = getNodeColor(node.character).clone();
-        
-        // Apply color adjustments based on node state
-        if (isInitialChoicePhase) {
-          if (triumvirateNodeSet.has(node.id)) {
-            const color = triumvirateColorMap[node.id as keyof typeof triumvirateColorMap];
-            if (color) {
-              nodeColor.set(color);
-            }
-          } else {
-            nodeColor.multiplyScalar(0.2); // Dim non-triumvirate nodes
-          }
-        }
-        else if (triumvirateActive) {
-          if (!triumvirateNodeSet.has(node.id)) {
-            nodeColor.multiplyScalar(0.2); // Dim non-triumvirate nodes
-          }
-        } else if (isSelected) {
-          nodeColor.multiplyScalar(1.5); // Lighter shade
-        } else if (isConnected) {
-          nodeColor.multiplyScalar(0.5); // Darker shade
-        } else if (isHovered) {
-          nodeColor.multiplyScalar(1.2); // Slightly lighter for hover
-        } else if (isDesignatedStartingNode) {
-          // Potentially give starting nodes a distinct look even if not selected/hovered,
-          // or this could be handled by the pulsing effect later.
-          // For now, let's ensure they don't get dimmed like 'isConnected' if they are also connected.
-          // Example: nodeColor.multiplyScalar(1.1); // Slightly brighter if it's a starting node
-        }        // The main node group's position is determined by synchronized positions,
+        const isHovered = hoveredNodeId === node.id;        const isDesignatedStarting = isDesignatedStartingNode(node);
+        const labelText = isInitialChoicePhase ? getStartingNodeLabel(node) : '';
+        const triumvirateText = triumvirateActive && triumvirateNodes.includes(node.id) ? getTriumvirateText(node.id) : '';
+          // Calculate node color using helper function
+        const nodeColor = calculateNodeColor(
+          node,
+          isSelected,
+          isConnected,
+          isHovered,
+          isInitialChoicePhase,
+          triumvirateActive,
+          triumvirateNodeSet,
+          triumvirateColorMap
+        );// The main node group's position is determined by synchronized positions,
         // and individual elements within this group (like the sphere and text) will be positioned relatively.
         const groupPosition = groupPositions[node.id] || originalPositions.current[node.id] || [0, 0, 0];
         
@@ -468,7 +506,7 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
             userData={{ nodeId: node.id }} // Add nodeId to userData for connection positioning
           >
             {/* Text label for node - only for designated starting nodes in initial choice phase */}
-            {isDesignatedStartingNode && isInitialChoicePhase && !triumvirateActive && !props.isMinimap && labelText && (
+            {isDesignatedStarting && isInitialChoicePhase && !triumvirateActive && !props.isMinimap && labelText && (
               <Text
                 ref={(text) => {
                   if (text) {
@@ -550,136 +588,39 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
                 }
               }}
               // Position is now relative to the parent group, so [0,0,0] for the node sphere center
-              position={[0, 0, 0]}
-              onClick={(e: ThreeEvent<MouseEvent>) => {
-                if (e.stopPropagation) e.stopPropagation();
-
-                // Emit custom event to hide tooltip when a node is clicked
-                const nodeUnhoverEvent = new CustomEvent('node-unhover');
-                window.dispatchEvent(nodeUnhoverEvent);
-
-                if (isInitialChoicePhase) {
-                  if (isDesignatedStartingNode) {
-                    // Dispatch actions in sequence with proper error handling
-                    try {
-                      dispatch(nodeSelected(node.id));
-                      dispatch(visitNode(node.id));
-                      dispatch(setViewMode('reading'));
-                      dispatch(navigateToNode({
-                        nodeId: node.id,
-                        character: node.character,
-                        temporalValue: node.temporalValue,
-                        attractors: node.strangeAttractors,
-                      }));
-                    } catch (error) {
-                      console.error('Navigation error:', error);
-                    }
-                  }
-                  return; // Exit early if in initial choice phase
-                }
-                // Normal click logic (outside initial choice phase)
-                if (onNodeClick) { // This path is typically for MiniConstellation
-                  if (clickableNodeIds && !clickableNodeIds.includes(node.id)) {
-                    return;
-                  }
-                  onNodeClick(node.id);
-                } else { // This path is for the main ConstellationView
-                  if (selectedNodeId === null) { // If no node is selected, any node can be clicked
-                    dispatch(nodeSelected(node.id));
-                    dispatch(visitNode(node.id));
-                    dispatch(setViewMode('reading'));
-                    dispatch(navigateToNode({
-                      nodeId: node.id,
-                      character: node.character,
-                      temporalValue: node.temporalValue,
-                      attractors: node.strangeAttractors,
-                    }));
-                  } else { // If a node is already selected, only connected nodes can be clicked
-                    const isConnectedToCurrentSelected = connections.some(
-                      (c) =>
-                        (c.start === selectedNodeId && c.end === node.id) ||
-                        (c.start === node.id && c.end === selectedNodeId)
-                    );
-                    if (isConnectedToCurrentSelected) {
-                      dispatch(nodeSelected(node.id));
-                      dispatch(visitNode(node.id));
-                      dispatch(setViewMode('reading'));
-                      dispatch(navigateToNode({
-                        nodeId: node.id,
-                        character: node.character,
-                        temporalValue: node.temporalValue,
-                        attractors: node.strangeAttractors,
-                      }));
-                    }
-                  }
-                }
-              }}
-              onPointerOver={(e: ThreeEvent<PointerEvent>) => {
-                if (props.isMinimap) return; // Do not show hover effects in minimap
-                if (e.stopPropagation) e.stopPropagation();
-                if (node.id !== hoveredNodeId) {
-                  dispatch(nodeHovered(node.id));
-                  
-                  // Determine if this node is clickable using the same logic as onClick
-                  let isClickable = false;
-                  
-                  if (triumvirateActive) {
-                    isClickable = triumvirateNodeSet.has(node.id);
-                  } else if (isInitialChoicePhase) {
-                    // In initial choice phase, only designated starting nodes are clickable
-                    isClickable = isDesignatedStartingNode;
-                  } else {
-                    // Normal click logic (outside initial choice phase)
-                    if (onNodeClick) { // This path is typically for MiniConstellation
-                      isClickable = !clickableNodeIds || clickableNodeIds.includes(node.id);
-                    } else { // This path is for the main ConstellationView
-                      if (selectedNodeId === null) { // If no node is selected, any node can be clicked
-                        isClickable = true;
-                      } else { // If a node is already selected, only connected nodes can be clicked
-                        const isConnectedToCurrentSelected = connections.some(
-                          (c) =>
-                            (c.start === selectedNodeId && c.end === node.id) ||
-                            (c.start === node.id && c.end === selectedNodeId)
-                        );
-                        isClickable = isConnectedToCurrentSelected;
-                      }
-                    }
-                  }
-                  
-                  // Emit custom event for tooltip positioning
-                  // Just use client coordinates from the event directly
-                  const nodeHoverEvent = new CustomEvent('node-hover', {
-                    detail: {
-                      position: {
-                        x: e.clientX,
-                        y: e.clientY - 40 // Position tooltip 40px above cursor
-                      },
-                      nodeId: node.id,
-                      isClickable: isClickable
-                    }
-                  });
-                  window.dispatchEvent(nodeHoverEvent);
-                }
-              }}
-              onPointerOut={(e: ThreeEvent<PointerEvent>) => {
+              position={[0, 0, 0]}              onClick={createNodeClickHandler(
+                node,
+                isDesignatedStarting,
+                isInitialChoicePhase,
+                dispatch,
+                onNodeClick,
+                clickableNodeIds,
+                selectedNodeId,
+                connections
+              )}              onPointerOver={createNodeHoverHandler(
+                node,
+                isDesignatedStarting,
+                props.isMinimap || false,
+                triumvirateActive,
+                triumvirateNodeSet,
+                isInitialChoicePhase,
+                dispatch,
+                hoveredNodeId,
+                onNodeClick,
+                clickableNodeIds,
+                selectedNodeId,
+                connections
+              )}              onPointerOut={(e: ThreeEvent<PointerEvent>) => {
                 if (props.isMinimap) return;
                 if (e.stopPropagation) e.stopPropagation();
                 dispatch(nodeUnhovered());
-                
-                // Emit custom event for tooltip hiding
-                const nodeUnhoverEvent = new CustomEvent('node-unhover');
-                window.dispatchEvent(nodeUnhoverEvent);
+                handleNodeUnhover();
               }}
-              
-              // Fix for stuck hover: Add pointer leave event
               onPointerLeave={(e: ThreeEvent<PointerEvent>) => {
                 if (props.isMinimap) return;
                 if (e.stopPropagation) e.stopPropagation();
                 dispatch(nodeUnhovered());
-                
-                // Emit custom event for tooltip hiding
-                const nodeUnhoverEvent = new CustomEvent('node-unhover');
-                window.dispatchEvent(nodeUnhoverEvent);
+                handleNodeUnhover();
               }}
             >
               {/* Use lower poly geometry for distant nodes */}
@@ -714,3 +655,125 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
     </group>
   );
 });
+
+// Helper function to calculate node color based on state
+const calculateNodeColor = (
+  node: ConstellationNode,
+  isSelected: boolean,
+  isConnected: boolean,
+  isHovered: boolean,
+  isInitialChoicePhase: boolean,
+  triumvirateActive: boolean,
+  triumvirateNodeSet: Set<string>,
+  triumvirateColorMap: { [key: string]: Color }
+): Color => {
+  const nodeColor = getNodeColor(node.character).clone();
+  
+  if (isInitialChoicePhase) {
+    if (triumvirateNodeSet.has(node.id)) {
+      const color = triumvirateColorMap[node.id as keyof typeof triumvirateColorMap];
+      if (color) {
+        nodeColor.set(color);
+      }
+    } else {
+      nodeColor.multiplyScalar(0.2); // Dim non-triumvirate nodes
+    }
+  } else if (triumvirateActive) {
+    if (!triumvirateNodeSet.has(node.id)) {
+      nodeColor.multiplyScalar(0.2); // Dim non-triumvirate nodes
+    }
+  } else if (isSelected) {
+    nodeColor.multiplyScalar(1.5); // Lighter shade
+  } else if (isConnected) {
+    nodeColor.multiplyScalar(0.5); // Darker shade
+  } else if (isHovered) {
+    nodeColor.multiplyScalar(1.2); // Slightly lighter for hover
+  }
+  
+  return nodeColor;
+};
+
+// Helper function to create onClick handler
+const createNodeClickHandler = (
+  node: ConstellationNode,
+  isDesignatedStarting: boolean,
+  isInitialChoicePhase: boolean,
+  dispatch: AppDispatch,
+  onNodeClick?: (nodeId: string) => void,
+  clickableNodeIds?: string[],
+  selectedNodeId?: string | null,
+  connections?: { start: string; end: string }[]
+) => (e: ThreeEvent<MouseEvent>) => {
+  if (e.stopPropagation) e.stopPropagation();
+
+  // Emit custom event to hide tooltip when a node is clicked
+  handleNodeUnhover();
+
+  if (isInitialChoicePhase) {
+    if (isDesignatedStarting) {
+      try {
+        handleNodeNavigation(dispatch, node);
+      } catch (error) {
+        console.error('Navigation error:', error);
+      }
+    }
+    return;
+  }
+  
+  // Normal click logic (outside initial choice phase)
+  if (onNodeClick) {
+    if (clickableNodeIds && !clickableNodeIds.includes(node.id)) {
+      return;
+    }
+    onNodeClick(node.id);
+  } else {
+    if (selectedNodeId === null) {
+      handleNodeNavigation(dispatch, node);
+    } else if (connections) {
+      const isConnectedToCurrentSelected = connections.some(
+        (c) =>
+          (c.start === selectedNodeId && c.end === node.id) ||
+          (c.start === node.id && c.end === selectedNodeId)
+      );
+      if (isConnectedToCurrentSelected) {
+        handleNodeNavigation(dispatch, node);
+      }
+    }
+  }
+};
+
+// Helper function to create onPointerOver handler
+const createNodeHoverHandler = (
+  node: ConstellationNode,
+  isDesignatedStarting: boolean,
+  isMinimap: boolean,
+  triumvirateActive: boolean,
+  triumvirateNodeSet: Set<string>,
+  isInitialChoicePhase: boolean,
+  dispatch: AppDispatch,
+  hoveredNodeId?: string | null,
+  onNodeClick?: (nodeId: string) => void,
+  clickableNodeIds?: string[],  selectedNodeId?: string | null,
+  connections?: { start: string; end: string }[]
+) => (e: ThreeEvent<PointerEvent>) => {
+  if (isMinimap) return;
+  if (e.stopPropagation) e.stopPropagation();
+  
+  if (node.id !== hoveredNodeId) {
+    dispatch(nodeHovered(node.id));
+    
+    const isClickable = isNodeClickable(
+      node,
+      isDesignatedStarting,
+      triumvirateActive,
+      triumvirateNodeSet,
+      isInitialChoicePhase,
+      connections || [],
+      onNodeClick,
+      clickableNodeIds,
+      selectedNodeId
+    );
+    
+    handleNodeHover(node.id, isClickable, e.clientX, e.clientY);
+  }
+};
