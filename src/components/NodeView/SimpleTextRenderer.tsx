@@ -9,13 +9,15 @@
  * 2. Uses pure React/DOM rendering without WebGL
  * 3. Maintains proper text display even when resources are constrained
  * 4. Provides graceful fallbacks and simplified transformations
+ * 5. EMERGENCY FIX: Prevents and recovers from content corruption
  */
 
 import React, { useEffect, useState, useRef, memo } from 'react';
 import { useNodeState } from '../../hooks/useNodeState';
-import { TextTransformation } from '../../types';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../../store/types';
+import { recoverNodeContent, validateNodeContent } from '../../store/slices/nodesSlice';
+import { isContentCorrupted, sanitizeDisplayContent } from '../../utils/contentSanitizer';
 import '../../styles/NarramorphTransformations.css';
 import '../../styles/SimpleTextRenderer.css';
 import SimpleTransformationContainer from './SimpleTransformationContainer';
@@ -25,99 +27,6 @@ interface SimpleTextRendererProps {
   onRenderComplete?: () => void;
   onVisibilityChange?: (isVisible: boolean) => void;
 }
-
-// Text processor without WebGL dependencies
-const processTextTransformations = (
-  content: string,
-  transformations: TextTransformation[]
-): string => {
-  if (!content || !transformations.length) return content;
-  
-  let processedContent = content;
-  
-  // Sort transformations by priority to apply highest priority first
-  const sortedTransformations = [...transformations].sort((a, b) => {
-    const priorityMap: Record<string, number> = {
-      'high': 3,
-      'medium': 2,
-      'low': 1
-    };
-    
-    const aPriority = priorityMap[a.priority || 'medium'] || 2;
-    const bPriority = priorityMap[b.priority || 'medium'] || 2;
-    
-    return bPriority - aPriority;
-  });
-  
-  // Apply transformations using HTML and CSS instead of WebGL effects
-  for (const transformation of sortedTransformations) {
-    const { type, selector, replacement, emphasis } = transformation;
-    
-    if (!selector) continue;
-    
-    try {
-      switch (type) {
-        case 'replace': {
-          if (replacement) {
-            // Simple text replacement with span markers
-            const spanClass = `text-transformation text-replaced`;
-            const replacementHtml = `<span class="${spanClass}" data-transform-type="replace">${replacement}</span>`;
-            processedContent = processedContent.replace(
-              new RegExp(selector, 'g'),
-              replacementHtml
-            );
-          }
-          break;
-        }
-          
-        case 'emphasize': {
-          // Add emphasis with appropriate class
-          const emphasisClass = emphasis || 'color';
-          const emphasisHtml = `<span class="text-transformation text-emphasis text-emphasis-${emphasisClass}" data-transform-type="emphasize" data-emphasis="${emphasisClass}">${selector}</span>`;
-          processedContent = processedContent.replace(
-            new RegExp(selector, 'g'),
-            emphasisHtml
-          );
-          break;
-        }
-          
-        case 'expand': {
-          // Add expansion with appropriate class
-          const expandHtml = `<span class="text-transformation text-expanded" data-transform-type="expand">${selector}</span>`;
-          processedContent = processedContent.replace(
-            new RegExp(selector, 'g'),
-            expandHtml
-          );
-          break;
-        }
-          
-        case 'fragment': {
-          // Add fragmentation with appropriate class
-          const fragmentHtml = `<span class="text-transformation text-fragmented" data-transform-type="fragment">${selector}</span>`;
-          processedContent = processedContent.replace(
-            new RegExp(selector, 'g'),
-            fragmentHtml
-          );
-          break;
-        }
-          
-        case 'metaComment': {
-          // Add meta comment with appropriate class
-          const commentHtml = `<span class="text-transformation text-commented" data-transform-type="metaComment">${selector}</span>`;
-          processedContent = processedContent.replace(
-            new RegExp(selector, 'g'),
-            commentHtml
-          );
-          break;
-        }
-      }
-    } catch (error) {
-      console.error(`[SimpleTextRenderer] Error applying transformation ${type}:`, error);
-    }
-  }
-  
-  return processedContent;
-};
 
 // Main renderer component
 const SimpleTextRenderer: React.FC<SimpleTextRendererProps> = memo(({
@@ -130,10 +39,10 @@ const SimpleTextRenderer: React.FC<SimpleTextRendererProps> = memo(({
     transformedContent: originalTransformedContent,
     appliedTransformations
   } = useNodeState(nodeId);
-  
-  const [processedContent, setProcessedContent] = useState<string>('');
+    const [processedContent, setProcessedContent] = useState<string>('');
   const [isVisible, setIsVisible] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
+  const [corruptionDetected, setCorruptionDetected] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const mutationObserverRef = useRef<MutationObserver | null>(null);
@@ -145,22 +54,58 @@ const SimpleTextRenderer: React.FC<SimpleTextRendererProps> = memo(({
   const readingPath = useSelector((state: RootState) => state.reader.path);
     // Track if callbacks have been called to prevent infinite loops
   const callbacksCalledRef = useRef(false);
-  
-  // Process transformations in a simpler way
+  const dispatch = useDispatch();
+    // EMERGENCY CONTENT RECOVERY: Process transformations with corruption detection
   useEffect(() => {
-    if (node?.currentContent) {
-      console.log(`[SimpleTextRenderer] Processing content for node: ${node.id}, length: ${node.currentContent.length}`);
+    if (node?.currentContent || node?.originalContent) {
+      console.log(`[SimpleTextRenderer] Processing content for node: ${node.id}, length: ${(node.originalContent || node.currentContent)?.length}`);
       setIsLoading(true);
+      setCorruptionDetected(false);
       
-      // Either use the transformed content from useNodeState or process it ourselves
-      const content = originalTransformedContent || node.currentContent;
-      
-      // BUGFIX: Process content immediately without animation frame
       try {
-        console.log(`[SimpleTextRenderer] Starting content processing synchronously`);
-        // Apply transformations using simple DOM manipulations instead of WebGL
-        const processed = processTextTransformations(content, appliedTransformations);
-        setProcessedContent(processed);
+        // EMERGENCY FIX: Use original content if available
+        const baseContent = node.originalContent || node.currentContent || '';
+        
+        // Check for corruption in the content we're about to process
+        if (isContentCorrupted(baseContent)) {
+          console.error(`[SimpleTextRenderer] Content corruption detected for node ${node.id}:`, {
+            contentLength: baseContent.length,
+            contentPreview: baseContent.substring(0, 100)
+          });
+          
+          setCorruptionDetected(true);
+          
+          // Try to recover from original content
+          if (node.originalContent && node.originalContent !== baseContent) {
+            console.log(`[SimpleTextRenderer] Attempting content recovery for node ${node.id}`);
+            dispatch(recoverNodeContent(node.id));
+            return; // Exit and let the recovery trigger a re-render
+          } else {
+            // Show fallback content
+            setProcessedContent('⚠️ Content temporarily unavailable. Please refresh to restore.');
+            setIsLoading(false);
+            return;
+          }
+        }
+        
+        // Either use the transformed content from useNodeState or process it ourselves
+        const content = originalTransformedContent || baseContent;
+        
+        // Apply final sanitization to remove any remaining corruption markers
+        const finalContent = sanitizeDisplayContent(content);
+        
+        console.log(`[SimpleTextRenderer] Content processing complete for node ${node.id}:`, {
+          originalLength: baseContent.length,
+          transformedLength: content.length,
+          finalLength: finalContent.length,
+          appliedTransformations: appliedTransformations.length,
+          usingOriginalContent: !!node.originalContent
+        });
+        
+        setProcessedContent(finalContent);
+        
+        // Validate content integrity
+        dispatch(validateNodeContent(node.id));
         
         // Increment render count for monitoring
         setRenderCount(prev => prev + 1);
@@ -188,11 +133,12 @@ const SimpleTextRenderer: React.FC<SimpleTextRendererProps> = memo(({
         }
       } catch (error) {
         console.error(`[SimpleTextRenderer] Error processing content:`, error);
-        // Still mark as not loading in case of error
+        setCorruptionDetected(true);
+        setProcessedContent('❌ Content processing error. Please refresh to restore.');
         setIsLoading(false);
       }
     }  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [node?.currentContent, node?.id, originalTransformedContent]); // Removed appliedTransformations and callbacks to prevent infinite loops
+  }, [node?.currentContent, node?.originalContent, node?.id, originalTransformedContent, dispatch]);
 
   // Reset callback flag when node changes
   useEffect(() => {
@@ -330,8 +276,7 @@ const SimpleTextRenderer: React.FC<SimpleTextRendererProps> = memo(({
         position: 'relative',
         minHeight: '200px'
       }}
-    >
-      <SimpleTransformationContainer
+    >      <SimpleTransformationContainer
         transformations={appliedTransformations}
         nodeId={node.id}
       >
@@ -342,14 +287,29 @@ const SimpleTextRenderer: React.FC<SimpleTextRendererProps> = memo(({
           </div>
         )}
         
+        {corruptionDetected && (
+          <div className="content-corruption-warning" style={{ 
+            padding: '15px', 
+            margin: '10px 0', 
+            backgroundColor: '#fff3cd', 
+            border: '1px solid #ffeeba', 
+            borderRadius: '4px', 
+            color: '#856404' 
+          }}>
+            <strong>⚠️ Content Recovery Mode</strong>
+            <p>Content corruption detected. Attempting recovery...</p>
+          </div>
+        )}
+        
         <div
           ref={contentRef}
           className="simple-renderer-content"
           data-transformations-count={appliedTransformations.length}
+          data-corruption-detected={corruptionDetected}
           style={{
             display: 'block',
             visibility: 'visible',
-            opacity: 1
+            opacity: corruptionDetected ? 0.7 : 1
           }}
         >
           <div

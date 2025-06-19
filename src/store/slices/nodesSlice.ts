@@ -562,6 +562,55 @@ const nodesSlice = createSlice({
       });
       state.triumvirateActive = true;
     },
+    
+    // EMERGENCY CONTENT RECOVERY: Action to restore original content
+    recoverNodeContent: (state, action: PayloadAction<string>) => {
+      const nodeId = action.payload;
+      const node = state.data[nodeId];
+      
+      if (node && node.originalContent) {
+        console.log(`[EMERGENCY RECOVERY] Restoring original content for node ${nodeId}:`, {
+          originalLength: node.originalContent.length,
+          currentLength: node.currentContent?.length || 0,
+          transformationState: node.transformationState
+        });
+        
+        // Restore clean original content
+        node.currentContent = node.originalContent;
+        node.lastTransformedContent = null;
+        node.appliedTransformationIds = [];
+        node.transformationState = 'clean';
+        node.contentVersion = (node.contentVersion || 0) + 1;
+      } else {
+        console.error(`[EMERGENCY RECOVERY] Cannot recover content for node ${nodeId} - no original content available`);
+      }
+    },
+    
+    // EMERGENCY CONTENT RECOVERY: Action to validate content integrity
+    validateNodeContent: (state, action: PayloadAction<string>) => {
+      const nodeId = action.payload;
+      const node = state.data[nodeId];
+      
+      if (node && node.currentContent) {
+        const isCorrupted = (
+          node.currentContent.includes('[object Object]') ||
+          node.currentContent.includes('undefined') ||
+          node.currentContent.includes('<span class="glitch-text"><span class="glitch-text">') ||
+          node.currentContent.match(/<<\*\*span\*\*/g) ||
+          node.currentContent.length < 10
+        );
+        
+        if (isCorrupted) {
+          console.warn(`[CONTENT VALIDATION] Corruption detected in node ${nodeId}:`, {
+            contentLength: node.currentContent.length,
+            contentPreview: node.currentContent.substring(0, 100)
+          });
+          node.transformationState = 'corrupted';
+        } else {
+          node.transformationState = node.appliedTransformationIds.length > 0 ? 'transformed' : 'clean';
+        }
+      }
+    },
   },
   extraReducers: (builder) => {
     // Handle initialization
@@ -573,16 +622,23 @@ const nodesSlice = createSlice({
       state.loading = false;
       state.initialized = true;
         // Convert Node[] to Record<string, NodeState>
-      action.payload.forEach(node => {
-        state.data[node.id] = {
+      action.payload.forEach(node => {        state.data[node.id] = {
           ...node,
           visitCount: 0,
+          visitState: 'unvisited',
           currentState: 'unvisited',
           revealedConnections: [...node.initialConnections],
           transformations: [],
           content: null,
           enhancedContent: null,
           currentContent: null,
+          
+          // EMERGENCY CONTENT RECOVERY: Initialize content versioning fields
+          originalContent: null,
+          lastTransformedContent: null,
+          appliedTransformationIds: [],
+          contentVersion: 0,
+          transformationState: 'clean'
         };
       });
     });
@@ -593,17 +649,18 @@ const nodesSlice = createSlice({
       // Handle content loading (will be expanded in future)
     builder.addCase(loadNodeContent.pending, (state) => {
       state.loading = true;
-    });
-    builder.addCase(loadNodeContent.fulfilled, (state, action: PayloadAction<{ nodeId: string; content: NarramorphContent; enhancedContent: EnhancedNarramorphContent }>) => {
+    });    builder.addCase(loadNodeContent.fulfilled, (state, action: PayloadAction<{ nodeId: string; content: NarramorphContent; enhancedContent: EnhancedNarramorphContent }>) => {
       const { nodeId, content, enhancedContent } = action.payload;
       const node = state.data[nodeId];
       if (node) {
           node.content = content;
           node.enhancedContent = enhancedContent;
           
-          // For now, use simplified content selection (will be enhanced with full context later)
+          // EMERGENCY CONTENT RECOVERY: Determine and preserve original content
+          let originalContent: string | null = null;
+          
           if (enhancedContent && enhancedContent.base) {
-            node.currentContent = enhancedContent.base;
+            originalContent = enhancedContent.base;
           } else {
             // Fallback to legacy logic
             const availableCounts = Object.keys(node.content)
@@ -612,10 +669,29 @@ const nodesSlice = createSlice({
             const lookupKey = Math.max(0, node.visitCount - 1);
             const bestMatch = availableCounts.find(count => lookupKey >= count);
             if (bestMatch !== undefined) {
-                node.currentContent = node.content[bestMatch];
-            } else {
-                node.currentContent = null;
+                originalContent = node.content[bestMatch];
             }
+          }
+          
+          // EMERGENCY CONTENT RECOVERY: Set up content versioning
+          if (originalContent) {
+            node.originalContent = originalContent; // Always preserve original
+            node.currentContent = originalContent; // Start with clean content
+            node.lastTransformedContent = null; // Reset transformed cache
+            node.appliedTransformationIds = []; // Reset applied transformations
+            node.contentVersion = (node.contentVersion || 0) + 1; // Increment version
+            node.transformationState = 'clean'; // Mark as clean content
+            
+            console.log(`[EMERGENCY CONTENT RECOVERY] Content loaded for node ${nodeId}:`, {
+              originalLength: originalContent.length,
+              contentVersion: node.contentVersion,
+              transformationState: node.transformationState,
+              contentPreview: originalContent.substring(0, 100) + '...'
+            });
+          } else {
+            console.error(`[EMERGENCY CONTENT RECOVERY] Failed to extract content for node ${nodeId}`);
+            node.currentContent = null;
+            node.transformationState = 'corrupted';
           }
       }
       state.loading = false;
@@ -635,6 +711,8 @@ export const {
   evaluateTransformations,
   applyJourneyTransformations,
   updateContentVariant,
+  recoverNodeContent,
+  validateNodeContent,
   resetNodes
 } = nodesSlice.actions;
 

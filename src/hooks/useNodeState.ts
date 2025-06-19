@@ -114,7 +114,9 @@ export const useNodeState = (nodeId?: string) => {
     return node.revealedConnections;
   }, [node]);  // Calculate all transformations using the new master integration method
   const allTransformations = useMemo(() => {
-    if (!node?.currentContent) return [];
+    // EMERGENCY FIX: Use original content to prevent recursive transformations
+    const baseContent = node?.originalContent || node?.currentContent;
+    if (!baseContent) return [];
     
     // Use the new master transformation coordination method
     // This automatically handles character bleed, journey patterns, and node rules
@@ -122,7 +124,7 @@ export const useNodeState = (nodeId?: string) => {
     try {
       // Pass all nodes from Redux store for better context
       const transformations = transformationEngine.calculateAllTransformations(
-        node.currentContent,
+        baseContent, // EMERGENCY FIX: Always use original content
         node,
         readerState,
         allNodes
@@ -132,7 +134,9 @@ export const useNodeState = (nodeId?: string) => {
         characterBleed: transformations.filter(t => t.priority === 'high' && (t.type === 'emphasize' || t.type === 'fragment')).length,
         journeyPatterns: transformations.filter(t => t.priority === 'high' && t.type !== 'emphasize' && t.type !== 'fragment').length,
         nodeRules: transformations.filter(t => t.priority !== 'high').length,
-        totalTransformations: transformations.length
+        totalTransformations: transformations.length,
+        baseContentLength: baseContent.length,
+        usingOriginalContent: !!node?.originalContent
       });
       return transformations;
       
@@ -142,29 +146,32 @@ export const useNodeState = (nodeId?: string) => {
     }
   }, [node, readerState, allNodes]);  // Generate transformed content using the new master integration method
   const transformedContent = useMemo(() => {
-    if (!node?.currentContent) return node?.currentContent || null;
+    // EMERGENCY FIX: Use original content to prevent recursive transformations
+    const baseContent = node?.originalContent || node?.currentContent;
+    if (!baseContent) return null;
 
     try {
       // Use the new master getTransformedContent method
       // This automatically handles all transformation coordination, caching, and content application
       const fullyTransformedContent = transformationEngine.getTransformedContent(
-        node,
+        { ...node, currentContent: baseContent }, // EMERGENCY FIX: Force use of original content
         readerState,
         allNodes
       );
 
       // Add wrapper elements with transition classes if transformations were applied
-      if (fullyTransformedContent !== node.currentContent && allTransformations.length > 0) {
+      if (fullyTransformedContent !== baseContent && allTransformations.length > 0) {
         const wrappedContent = transformationService.wrapTransformedContent(
           fullyTransformedContent,
           allTransformations
         );
         
         console.log(`[useNodeState] Applied transformation wrapping for node ${node.id}:`, {
-          originalLength: node.currentContent.length,
+          originalLength: baseContent.length,
           transformedLength: fullyTransformedContent.length,
           wrappedLength: wrappedContent.length,
-          transformationsCount: allTransformations.length
+          transformationsCount: allTransformations.length,
+          usingOriginalContent: !!node?.originalContent
         });
         
         return wrappedContent;
@@ -174,9 +181,10 @@ export const useNodeState = (nodeId?: string) => {
       
     } catch (error) {
       console.error(`[useNodeState] Error in master content transformation for node ${node.id}:`, error);
-      return node?.currentContent || null;
+      // EMERGENCY FALLBACK: Return original content on error
+      return baseContent;
     }
-  }, [node, readerState, allNodes, allTransformations]);  // Track transformation changes in a separate effect to prevent infinite loops
+  }, [node, readerState, allNodes, allTransformations]);// Track transformation changes in a separate effect to prevent infinite loops
   useEffect(() => {
     if (!node || allTransformations.length === 0) return;
 

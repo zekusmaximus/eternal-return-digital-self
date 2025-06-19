@@ -261,14 +261,22 @@ export interface JourneyContext {
 }
 
 export interface NodeState extends Node {
-  visitCount: number;
-  currentState: NodeVisualState;
+  visitCount: number; // Number of times this node has been visited
+  visitState: 'unvisited' | 'visited' | 'revisited';
+  currentState: NodeVisualState; // Visual state for constellation view
   revealedConnections: string[]; // All available connections (initial + revealed)
   transformations: TransformationRule[]; // Applied transformations
   content: NarramorphContent | null; // Legacy content structure
   enhancedContent: EnhancedNarramorphContent | null; // New enhanced content structure
   currentContent: string | null; // The currently displayed content
-  journeyContext?: JourneyContext; // Optional journey context for character bleed effects
+  journeyContext?: JourneyContext; // Journey context for character bleed
+  
+  // EMERGENCY CONTENT RECOVERY FIELDS
+  originalContent: string | null; // Always preserve the original, untransformed content
+  lastTransformedContent: string | null; // Cache of last transformation result
+  appliedTransformationIds: string[]; // Track which transformations have been applied
+  contentVersion: number; // Version number to track content changes
+  transformationState: 'clean' | 'transformed' | 'corrupted'; // Track content state
 }
 
 /**

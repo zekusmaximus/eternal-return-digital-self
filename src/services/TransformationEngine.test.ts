@@ -69,13 +69,21 @@ const mockCurrentNodeState: NodeState = {
     revisit: 2,
     complex: 3,
     fragmented: 5
-  },  visitCount: 1,
+  },
+  visitCount: 1,
+  visitState: 'visited',
   currentState: 'visited',
   revealedConnections: [],
   transformations: [],
   content: null,
   enhancedContent: null,
-  currentContent: null
+  currentContent: null,
+  // EMERGENCY CONTENT RECOVERY FIELDS
+  originalContent: null,
+  lastTransformedContent: null,
+  appliedTransformationIds: [],
+  contentVersion: 1,
+  transformationState: 'clean'
 };
 
 // Test character bleed condition

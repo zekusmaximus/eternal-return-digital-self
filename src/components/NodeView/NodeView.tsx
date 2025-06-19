@@ -10,7 +10,7 @@ import {
   returnToConstellation,
   selectViewMode,
 } from '../../store/slices/interfaceSlice';
-import { loadNodeContent, selectNodeById, visitNode } from '../../store/slices/nodesSlice';
+import { loadNodeContent, selectNodeById, visitNode, validateNodeContent, recoverNodeContent } from '../../store/slices/nodesSlice';
 import { useAppDispatch } from '../../store/hooks';
 import { addVisitedNode } from '../../store/slices/readerSlice';
 import './NodeView.css';
@@ -413,12 +413,24 @@ const NodeView = () => {
         title: node.title ?? '',
         synopsis,
       }),
-    );
-
-    // Update ref to prevent duplicate processing
+    );    // Update ref to prevent duplicate processing
     lastVisitedIdRef.current = node.id;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch, node?.id]);
+  
+  // EMERGENCY CONTENT RECOVERY: Validate content on each render and trigger recovery if needed
+  useEffect(() => {
+    if (node?.id && node?.currentContent) {
+      // Validate content integrity
+      dispatch(validateNodeContent(node.id));
+      
+      // If content is marked as corrupted, attempt recovery
+      if (node.transformationState === 'corrupted' && node.originalContent) {
+        console.warn(`[NodeView] Content corruption detected for node ${node.id}, initiating recovery`);
+        dispatch(recoverNodeContent(node.id));
+      }
+    }
+  }, [node?.id, node?.currentContent, node?.transformationState, node?.originalContent, dispatch]);
   
   // Handle WebGL context loss errors
   useEffect(() => {
