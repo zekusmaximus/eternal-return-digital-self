@@ -103,10 +103,10 @@ class ViewManager {
       activeView: viewType,
       isTransitioning: true,
       transitionStartTime: Date.now(),
-      transitionCount: this.state.transitionCount + 1,
-      // Only generate a new key when actually changing views
+      transitionCount: this.state.transitionCount + 1,      // Only generate a new key when actually changing views
+      // Using crypto.randomUUID() for better uniqueness guarantees than Math.random()
       uniqueViewKey: needsNewKey
-        ? `view-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`
+        ? `view-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
         : this.state.uniqueViewKey
     };
     

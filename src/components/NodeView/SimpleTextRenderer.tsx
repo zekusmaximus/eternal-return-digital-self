@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SimpleTextRenderer Component
  * 
  * A lightweight, reliable alternative to the NarramorphRenderer
@@ -12,7 +12,7 @@
  * 5. EMERGENCY FIX: Prevents and recovers from content corruption
  */
 
-import React, { useEffect, useState, useRef, memo } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNodeState } from '../../hooks/useNodeState';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../../store/types';
@@ -28,106 +28,58 @@ interface SimpleTextRendererProps {
   onVisibilityChange?: (isVisible: boolean) => void;
 }
 
-// Main renderer component
-const SimpleTextRenderer: React.FC<SimpleTextRendererProps> = memo(({
-  nodeId,
-  onRenderComplete,
-  onVisibilityChange
-}) => {
-  const {
-    node,
-    transformedContent: originalTransformedContent,
-    appliedTransformations
-  } = useNodeState(nodeId);
-    const [processedContent, setProcessedContent] = useState<string>('');
+export default function SimpleTextRenderer({ nodeId, onRenderComplete, onVisibilityChange }: SimpleTextRendererProps) {
+  const { node, transformedContent, appliedTransformations } = useNodeState(nodeId);
+  const [processedContent, setProcessedContent] = useState<string>('');
   const [isVisible, setIsVisible] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [corruptionDetected, setCorruptionDetected] = useState(false);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const observerRef = useRef<IntersectionObserver | null>(null);
-  const mutationObserverRef = useRef<MutationObserver | null>(null);
-  
-  // Track rendering metrics
   const [renderCount, setRenderCount] = useState(0);
   
-  // Get reading path from reader state
-  const readingPath = useSelector((state: RootState) => state.reader.path);
-    // Track if callbacks have been called to prevent infinite loops
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const callbacksCalledRef = useRef(false);
   const dispatch = useDispatch();
-    // EMERGENCY CONTENT RECOVERY: Process transformations with corruption detection
+  const readingPath = useSelector((state: RootState) => state.reader.path);
+
+  useEffect(() => {
+    callbacksCalledRef.current = false;
+  }, [node?.id]);
+
   useEffect(() => {
     if (node?.currentContent || node?.originalContent) {
-      console.log(`[SimpleTextRenderer] Processing content for node: ${node.id}, length: ${(node.originalContent || node.currentContent)?.length}`);
       setIsLoading(true);
       setCorruptionDetected(false);
       
       try {
-        // EMERGENCY FIX: Use original content if available
         const baseContent = node.originalContent || node.currentContent || '';
         
-        // Check for corruption in the content we're about to process
         if (isContentCorrupted(baseContent)) {
-          console.error(`[SimpleTextRenderer] Content corruption detected for node ${node.id}:`, {
-            contentLength: baseContent.length,
-            contentPreview: baseContent.substring(0, 100)
-          });
-          
           setCorruptionDetected(true);
-          
-          // Try to recover from original content
           if (node.originalContent && node.originalContent !== baseContent) {
-            console.log(`[SimpleTextRenderer] Attempting content recovery for node ${node.id}`);
             dispatch(recoverNodeContent(node.id));
-            return; // Exit and let the recovery trigger a re-render
+            return;
           } else {
-            // Show fallback content
             setProcessedContent('⚠️ Content temporarily unavailable. Please refresh to restore.');
             setIsLoading(false);
             return;
           }
         }
         
-        // Either use the transformed content from useNodeState or process it ourselves
-        const content = originalTransformedContent || baseContent;
-        
-        // Apply final sanitization to remove any remaining corruption markers
+        const content = transformedContent || baseContent;
         const finalContent = sanitizeDisplayContent(content);
         
-        console.log(`[SimpleTextRenderer] Content processing complete for node ${node.id}:`, {
-          originalLength: baseContent.length,
-          transformedLength: content.length,
-          finalLength: finalContent.length,
-          appliedTransformations: appliedTransformations.length,
-          usingOriginalContent: !!node.originalContent
-        });
-        
         setProcessedContent(finalContent);
-        
-        // Validate content integrity
         dispatch(validateNodeContent(node.id));
-        
-        // Increment render count for monitoring
         setRenderCount(prev => prev + 1);
-        
-        // Immediately mark as not loading and visible
         setIsLoading(false);
         setIsVisible(true);
         
-        // Only call callbacks once per content change to prevent infinite loops
         if (!callbacksCalledRef.current) {
           callbacksCalledRef.current = true;
-          
-          // Signal render completion if callback provided
           if (onRenderComplete) {
-            console.log(`[SimpleTextRenderer] Render complete for node: ${node.id}`);
-            // Reduced delay to minimize possibility of content flickering
             setTimeout(onRenderComplete, 10);
           }
-          
-          // Ensure parent knows content is visible
           if (onVisibilityChange) {
-            console.log(`[SimpleTextRenderer] Explicitly marking content as visible`);
             onVisibilityChange(true);
           }
         }
@@ -137,134 +89,13 @@ const SimpleTextRenderer: React.FC<SimpleTextRendererProps> = memo(({
         setProcessedContent('❌ Content processing error. Please refresh to restore.');
         setIsLoading(false);
       }
-    }  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [node?.currentContent, node?.originalContent, node?.id, originalTransformedContent, dispatch]);
+    }
+  }, [node?.currentContent, node?.originalContent, node?.id, transformedContent, dispatch, onRenderComplete, onVisibilityChange]);
 
-  // Reset callback flag when node changes
-  useEffect(() => {
-    callbacksCalledRef.current = false;
-  }, [node?.id]);
-  // Set up visibility observer with simplified reliable detection
-  useEffect(() => {
-    const currentContentRef = contentRef.current;
-    const currentObserver = observerRef.current;
-    if (!currentContentRef) return;
-    
-    console.log(`[DEBUG] Setting up IntersectionObserver for node: ${node?.id}, current visibility: ${isVisible}`);
-    
-    // Clean up previous observer
-    if (currentObserver) {
-      currentObserver.disconnect();
-    }
-    
-    // Force visibility to true initially - BUGFIX
-    if (!isVisible) {
-      console.log(`[DEBUG] Forcing initial visibility to true for node: ${node?.id}`);
-      setIsVisible(true);
-      
-      // Only notify parent component if callback provided and callbacks haven't been called
-      if (onVisibilityChange && !callbacksCalledRef.current) {
-        onVisibilityChange(true);
-      }
-    }
-    
-    // DISABLE INTERSECTION OBSERVER TO PREVENT INFINITE LOOPS
-    // The intersection observer was causing render loops, so we'll just assume content is always visible
-    console.log(`[DEBUG] Skipping IntersectionObserver setup to prevent infinite loops for node: ${node?.id}`);
-    
-    // Cleanup function
-    return () => {
-      console.log(`[DEBUG] Cleaning up IntersectionObserver for node: ${node?.id}`);
-      if (currentObserver) {
-        currentObserver.disconnect();
-      }    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [node?.id, isVisible]); // Removed onVisibilityChange to prevent infinite loops
-  // Set up MutationObserver to prevent style changes that would hide content
-  useEffect(() => {
-    const currentContentRef = contentRef.current;
-    if (!currentContentRef) return;
-    
-    console.log(`[DEBUG] Setting up MutationObserver for node: ${node?.id}`);
-    
-    // Clean up previous observer
-    if (mutationObserverRef.current) {
-      mutationObserverRef.current.disconnect();
-    }
-    
-    // Create mutation observer with reduced frequency to prevent infinite loops
-    let mutationTimeout: number | null = null;
-    
-    mutationObserverRef.current = new MutationObserver((mutations) => {
-      // Debounce mutations to prevent excessive calls
-      if (mutationTimeout) {
-        clearTimeout(mutationTimeout);
-      }
-      
-      mutationTimeout = window.setTimeout(() => {
-        mutations.forEach((mutation) => {
-          if (mutation.type === 'attributes' &&
-              (mutation.attributeName === 'style' ||
-               mutation.attributeName === 'class' ||
-               mutation.attributeName === 'display' ||
-               mutation.attributeName === 'visibility' ||
-               mutation.attributeName === 'opacity')) {
-            
-            const target = mutation.target as HTMLElement;
-            const computedStyle = window.getComputedStyle(target);
-            
-            console.log(`[DEBUG] Style mutation detected on ${target.tagName}#${target.id}.${target.className}:`, {
-              display: computedStyle.display,
-              visibility: computedStyle.visibility,
-              opacity: computedStyle.opacity
-            });
-            
-            // If any change would hide the content, force it back to visible
-            if (computedStyle.display === 'none' ||
-                computedStyle.visibility === 'hidden' ||
-                parseFloat(computedStyle.opacity) === 0) {
-              
-              console.warn(`[DEBUG] Preventing content from being hidden by style mutation`);
-              
-              // Force visibility
-              target.style.display = target.style.display === 'none' ? 'block' : target.style.display;
-              target.style.visibility = target.style.visibility === 'hidden' ? 'visible' : target.style.visibility;
-              target.style.opacity = parseFloat(target.style.opacity) === 0 ? '1' : target.style.opacity;
-              
-              // Only notify parent if this is the main content element and callbacks haven't been called
-              if (target === currentContentRef && onVisibilityChange && !callbacksCalledRef.current) {
-                console.log(`[DEBUG] Notifying parent that content is still visible after mutation`);
-                onVisibilityChange(true);
-              }
-            }
-          }
-        });
-      }, 100); // Debounce mutations by 100ms
-    });
-    
-    // Observe the content element and its children with reduced scope
-    mutationObserverRef.current.observe(currentContentRef, {
-      attributes: true,
-      attributeFilter: ['style', 'class'],
-      childList: false, // Reduce scope to prevent excessive mutations
-      subtree: false,   // Don't observe subtree to reduce noise
-    });
-      // Cleanup function
-    return () => {
-      console.log(`[DEBUG] Cleaning up MutationObserver for node: ${node?.id}`);
-      if (mutationTimeout) {
-        clearTimeout(mutationTimeout);
-      }
-      mutationObserverRef.current?.disconnect();    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [node?.id]); // Removed onVisibilityChange to prevent infinite loops
-  
-  // Render empty state if no content
   if (!node || !node.currentContent) {
     return <div className="simple-renderer-loading">Loading narrative content...</div>;
   }
-  
-  // Render with simpler container
+
   return (
     <div
       className={`simple-renderer-container ${isVisible ? 'is-visible' : ''}`}
@@ -276,7 +107,8 @@ const SimpleTextRenderer: React.FC<SimpleTextRendererProps> = memo(({
         position: 'relative',
         minHeight: '200px'
       }}
-    >      <SimpleTransformationContainer
+    >
+      <SimpleTransformationContainer
         transformations={appliedTransformations}
         nodeId={node.id}
       >
@@ -318,7 +150,7 @@ const SimpleTextRenderer: React.FC<SimpleTextRendererProps> = memo(({
           />
         </div>
       </SimpleTransformationContainer>
-        {/* Debug information */}
+      
       {process.env.NODE_ENV === 'development' && (
         <div className="simple-renderer-debug">
           <div className="debug-info">
@@ -327,22 +159,9 @@ const SimpleTextRenderer: React.FC<SimpleTextRendererProps> = memo(({
             <span>Renders: {renderCount}</span>
             <span>Path Length: {readingPath.sequence.length}</span>
             <span>Visibility: {isVisible ? 'Visible' : 'Hidden'}</span>
-            <span>Journey Context: {node.journeyContext ? 'Active' : 'None'}</span>
-            {node.journeyContext && (
-              <>
-                <span>Last Character: {node.journeyContext.lastVisitedCharacter || 'None'}</span>
-                <span>Character Bleed: {
-                  appliedTransformations.some(t => 
-                    t.type === 'fragment' || t.type === 'emphasize' && t.intensity && t.intensity > 3
-                  ) ? 'Yes' : 'No'
-                }</span>
-              </>
-            )}
           </div>
         </div>
       )}
     </div>
   );
-});
-
-export default SimpleTextRenderer;
+}

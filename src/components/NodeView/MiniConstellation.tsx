@@ -116,6 +116,10 @@ const MiniConstellation = forwardRef<HTMLDivElement, Record<string, never>>((_pr
         overflow: 'hidden',
         position: 'relative'
       }}
+      tabIndex={0}
+      role="region"
+      aria-label="Mini constellation visual container"
+      onKeyDown={() => { /* No-op: purely visual, but focusable for accessibility */ }}
       // Add separate onMouseEnter/onMouseLeave for hover effects
       onMouseEnter={(e) => {
         e.currentTarget.style.boxShadow = '0 0 15px rgba(255,255,255,0.3)';

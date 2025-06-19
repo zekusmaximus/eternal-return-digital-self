@@ -256,7 +256,9 @@ export const loadNodeContent = createAsyncThunk(
 
       // Try parsing as enhanced content first
       const enhancedContent = contentVariantService.parseContentVariants(text);
-      
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[loadNodeContent] Parsed enhancedContent for', node.contentSource, enhancedContent);
+      }
       // Also maintain legacy format for backwards compatibility
       const content: NarramorphContent = {};
       const parts = text.split(/---\[(\d+)\]/);

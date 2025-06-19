@@ -1,6 +1,6 @@
 // src/components/NodeView/SimpleNodeRenderer.tsx
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import SimpleTransformationContainer from './SimpleTransformationContainer';
@@ -11,72 +11,109 @@ interface SimpleNodeRendererProps {
   onRenderComplete?: () => void;
 }
 
+// Constants
+const VISIBILITY_DELAY = 50;
+const RERENDER_INTERVAL = 500;
+const MAX_RERENDERS = 5;
+
+const FORCED_VISIBILITY_STYLES = `
+  visibility: visible !important;
+  display: block !important;
+  opacity: 1 !important;
+  position: relative !important;
+  z-index: 100 !important;
+`;
+
+// External component definitions to reduce cognitive complexity
+const LoadingComponent: React.FC = () => (
+  <div className="simple-node-loading force-visible">
+    Loading content...
+  </div>
+);
+
+const StatusIndicator: React.FC = () => (
+  <div className="simple-node-status">
+    <div className="simple-status-indicator">
+      Simple Rendering Active
+    </div>
+  </div>
+);
+
+interface MarkdownContentProps {
+  nodeId: string;
+  content: string;
+  renderCount: number;
+}
+
+const MarkdownContent: React.FC<MarkdownContentProps> = ({ nodeId, content, renderCount }) => (
+  <div className="simple-markdown-container force-visible">
+    <div key={`content-${nodeId}-${renderCount}`}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+        {content}
+      </ReactMarkdown>
+    </div>
+  </div>
+);
+
+// Custom hook for visibility management
+const useVisibilityManager = (
+  contentRef: React.RefObject<HTMLDivElement | null>, 
+  nodeId: string, 
+  hasContent: boolean,
+  onRenderComplete?: () => void
+) => {
+  const forceContentVisibility = useCallback(() => {
+    if (!contentRef.current) return;
+    
+    console.log('[SimpleNodeRenderer] Forcing content visibility');
+    contentRef.current.style.cssText = FORCED_VISIBILITY_STYLES;
+    
+    onRenderComplete?.();
+    console.timeEnd('SimpleNodeRenderer-render');
+  }, [contentRef, onRenderComplete]);
+
+  useEffect(() => {
+    if (!hasContent) return;
+    
+    console.time('SimpleNodeRenderer-render');
+    console.log('[SimpleNodeRenderer] Rendering content for node:', nodeId);
+    
+    const timer = setTimeout(forceContentVisibility, VISIBILITY_DELAY);
+    return () => clearTimeout(timer);
+  }, [hasContent, nodeId, forceContentVisibility]);
+};
+
+// Custom hook for re-render management
+const useReRenderManager = (renderCount: number, setRenderCount: React.Dispatch<React.SetStateAction<number>>) => {
+  const scheduleReRender = useCallback(() => {
+    setRenderCount(prev => prev + 1);
+    console.log(`[SimpleNodeRenderer] Forced re-render ${renderCount + 1}/${MAX_RERENDERS}`);
+  }, [renderCount, setRenderCount]);
+
+  useEffect(() => {
+    if (renderCount >= MAX_RERENDERS) return;
+    
+    const timer = setTimeout(scheduleReRender, RERENDER_INTERVAL);
+    return () => clearTimeout(timer);
+  }, [renderCount, scheduleReRender]);
+};
+
 /**
  * A simplified node renderer that directly renders markdown content without complex transformations.
  * This serves as a reliable backup when the main renderer fails to display content.
  */
 const SimpleNodeRenderer: React.FC<SimpleNodeRendererProps> = ({ nodeId, onRenderComplete }) => {
-  // Use the nodeState hook to access transformations and content
-  const {
-    node,
-    appliedTransformations
-  } = useNodeState(nodeId);
-  
+  const { node, appliedTransformations } = useNodeState(nodeId);
   const contentRef = useRef<HTMLDivElement>(null);
   const [renderCount, setRenderCount] = useState(0);
   
-  // Log render timing for debugging the race condition
-  useEffect(() => {
-    console.time('SimpleNodeRenderer-render');
-    
-    if (node?.currentContent) {
-      console.log('[SimpleNodeRenderer] Rendering content for node:', nodeId);
-      
-      // Force visibility with a small delay to ensure DOM is fully rendered
-      const forceVisibilityTimer = setTimeout(() => {
-        if (contentRef.current) {
-          console.log('[SimpleNodeRenderer] Forcing content visibility');
-          // Apply direct style overrides to ensure visibility
-          contentRef.current.style.cssText = `
-            visibility: visible !important;
-            display: block !important;
-            opacity: 1 !important;
-            position: relative !important;
-            z-index: 100 !important;
-          `;
-          
-          if (onRenderComplete) {
-            onRenderComplete();
-          }
-        }
-        console.timeEnd('SimpleNodeRenderer-render');
-      }, 50);
-      
-      return () => clearTimeout(forceVisibilityTimer);
-    }
-    
-    return undefined;
-  }, [node, nodeId, onRenderComplete]);
+  const hasContent = Boolean(node?.currentContent);
+  
+  useVisibilityManager(contentRef, nodeId, hasContent, onRenderComplete);
+  useReRenderManager(renderCount, setRenderCount);
 
-  // Force re-render every 500ms for the first few seconds to ensure content remains visible
-  useEffect(() => {
-    const maxRenders = 5; // Limit to 5 re-renders
-    if (renderCount < maxRenders) {
-      const timer = setTimeout(() => {
-        setRenderCount(prev => prev + 1);
-        console.log(`[SimpleNodeRenderer] Forced re-render ${renderCount + 1}/${maxRenders}`);
-      }, 500);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [renderCount]);
-
-  if (!node || !node.currentContent) {
-    return (
-      <div className="simple-node-loading force-visible">
-        Loading content...
-      </div>
-    );
+  if (!hasContent) {
+    return <LoadingComponent />;
   }
 
   return (
@@ -90,20 +127,11 @@ const SimpleNodeRenderer: React.FC<SimpleNodeRendererProps> = ({ nodeId, onRende
         data-node-id={nodeId}
         data-render-count={renderCount}
       >
-        <div className="simple-node-status">
-          <div className="simple-status-indicator">
-            Simple Rendering Active
-          </div>
-        </div>
-        
-        <div className="simple-markdown-container force-visible">
-          {/* Use key to force re-render on content change */}
-          <div key={`content-${nodeId}-${renderCount}`}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {node.currentContent}
-            </ReactMarkdown>
-          </div>
-        </div>
+        <StatusIndicator />        <MarkdownContent 
+          nodeId={nodeId} 
+          content={node?.currentContent || ''} 
+          renderCount={renderCount} 
+        />
       </div>
     </SimpleTransformationContainer>
   );

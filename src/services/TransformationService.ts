@@ -16,7 +16,7 @@ import {
 } from '../types';
 import { ReaderState } from '../store/slices/readerSlice';
 import { transformationEngine } from './TransformationEngine';
-import { pathAnalyzer } from './PathAnalyzer';
+import { pathAnalyzer, ReadingPattern, AttractorEngagement } from './PathAnalyzer';
 
 // Enhanced cache for storing previously evaluated and applied transformations
 interface TransformationCache {
@@ -161,49 +161,15 @@ export class TransformationService {
   
   /**
    * Assign priorities to transformations based on their type and strength
-   */
-  private prioritizeTransformations(
+   */  private prioritizeTransformations(
     transformations: TextTransformation[],
     readerState: ReaderState,
     nodeState: NodeState
   ): PrioritizedTransformation[] {
     // Start with default priorities
     const prioritized: PrioritizedTransformation[] = transformations.map(transformation => {
-      // Base priority assignment
-      let priority = 50; // Default mid-level priority
-      let sourceType: PrioritizedTransformation['sourceType'] = 'condition';
+      const { priority, sourceType } = this.getBasePriorityAndSource(transformation);
       const conflictGroup: string | undefined = `selector-${transformation.selector}`;
-      
-      // Conflict group is based on selector
-      // Transformations with same selector might conflict
-      
-      // Modify priority and source type based on transformation type
-      switch (transformation.type) {
-        case 'replace':
-          priority = 80; // Highest priority since it completely changes content
-          sourceType = 'pattern';
-          break;
-          
-        case 'fragment':
-          priority = 75;
-          sourceType = 'rhythm';
-          break;
-          
-        case 'expand':
-          priority = 60;
-          sourceType = 'attractor';
-          break;
-          
-        case 'emphasize':
-          priority = 50;
-          sourceType = 'temporal';
-          break;
-          
-        case 'metaComment':
-          priority = 40; // Lowest priority since it just adds comments
-          sourceType = 'attractor';
-          break;
-      }
       
       return {
         transformation,
@@ -213,43 +179,19 @@ export class TransformationService {
       };
     });
     
-    // Further adjust priorities based on reader state and patterns
-    // Get significant patterns for this reader
+    // Get patterns and attractor engagements for priority adjustments
     const patterns = pathAnalyzer.identifySignificantPatterns(readerState, {
       [nodeState.id]: nodeState
     });
     
-    // Get attractor engagements
     const attractorEngagements = pathAnalyzer.calculateAttractorEngagement(readerState, {
       [nodeState.id]: nodeState
     });
     
-    // Adjust priority based on pattern strength and attractor engagement
+    // Adjust priorities based on patterns and attractors
     prioritized.forEach(item => {
-      // If transformation matches a strong pattern, increase priority
-      if (item.sourceType === 'pattern') {
-        const matchingPattern = patterns.find(p => 
-          p.type === 'sequence' && p.strength > 0.7);
-        if (matchingPattern) {
-          item.priority += Math.round(matchingPattern.strength * 15);
-        }
-      }
-      
-      // If transformation is related to an engaged attractor, adjust priority
-      if (item.sourceType === 'attractor' && item.transformation.selector) {
-        const relatedAttractor = attractorEngagements.find(engagement => 
-          nodeState.currentContent?.includes(item.transformation.selector) && 
-          nodeState.strangeAttractors.includes(engagement.attractor)
-        );
-        
-        if (relatedAttractor && relatedAttractor.engagementScore > 50) {
-          item.priority += Math.round((relatedAttractor.engagementScore - 50) / 5);
-        }
-      }
-      
-      // Temporal-based priority adjustments removed
-      
-      // Reading rhythm priority adjustments removed
+      this.adjustPriorityForPatterns(item, patterns);
+      this.adjustPriorityForAttractors(item, attractorEngagements, nodeState);
     });
     
     return prioritized;
@@ -421,48 +363,14 @@ export class TransformationService {
     // Clean expired cache entries periodically
     this.cleanCache();
     
-    // Track if this node is visible (for metrics)
-    const isVisible = this.visibilityTracker[nodeId]?.isVisible || false;
-    
-    // Check if we have a cached version with the same content
-    if (this.cache[cacheKey] && 
-        this.cache[cacheKey].content && 
-        this.cache[cacheKey].content.length > content.length) { // Only use cache if it's actually transformed content
-      this.metrics.cacheHits++;
-      
-      // If we have a cache hit but the content isn't visible, mark for lazy processing
-      if (!isVisible && transformations.length > 0) {
-        this.metrics.lazyTransformationsDeferredCount++;
-      }
-      
-      return this.cache[cacheKey].content;
+    // Check cache for existing transformed content
+    const cachedContent = this.checkCacheForContent(cacheKey, nodeId, content, transformations);
+    if (cachedContent) {
+      return cachedContent;
     }
     
-    this.metrics.cacheMisses++;
-    
-    // Limit transformation count to prevent runaway transformations
-    const maxTransformations = 10;
-    if (transformations.length > maxTransformations) {
-      console.warn(`[TransformationService] Too many transformations (${transformations.length}) for node ${nodeId}, limiting to ${maxTransformations}`);
-      transformations = transformations.slice(0, maxTransformations);
-    }
-    
-    // If content isn't visible and transformations are expensive,
-    // consider deferring expensive transformations
-    if (!isVisible && transformations.length > 3) {
-      // Queue transformations for later processing
-      transformations.forEach(t => this.queueLazyTransformation(nodeId, t));
-      
-      // Only apply essential transformations now
-      const essentialTransformations = transformations.filter(t =>
-        t.type === 'replace' || // Always apply replacements
-        t.priority === 'high'   // And high priority transformations
-      );
-      
-      if (essentialTransformations.length < transformations.length) {
-        transformations = essentialTransformations;
-      }
-    }
+    // Filter transformations based on visibility and performance considerations
+    transformations = this.filterTransformationsForVisibility(transformations, nodeId);
     
     // Apply transformations
     const transformedContent = this.applyTransformationsWithPriority(
@@ -472,36 +380,110 @@ export class TransformationService {
       nodeState
     );
     
-    // Only cache if the content was actually transformed
-    if (transformedContent !== content) {
-      // Track transformed segments for partial updates
-      const transformedSegments = transformations.map(t => ({
-        selector: t.selector || '',
-        transformType: t.type,
-        position: this.findPositionInContent(content, t.selector || '') as [number, number]
-      })).filter(seg => seg.position[0] >= 0);
-      
-      // Cache the result with metadata
-      this.cache[cacheKey] = {
-        transformations,
-        timestamp: Date.now(),
-        content: transformedContent,
-        transformedSegments,
-        metadata: {
-          readerStateHash: JSON.stringify({
-            path: readerState.path.sequence.slice(-5),
-            attractors: Object.keys(readerState.path.attractorsEngaged || {})
-          }),
-          nodeStateHash: JSON.stringify({
-            id: nodeState.id,
-            visitCount: nodeState.visitCount
-          }),
-          complexity: this.calculateTransformationComplexity(transformations)
-        }
-      };
-    }
+    // Cache the result with metadata
+    this.cacheTransformedContent(cacheKey, transformations, content, transformedContent, readerState, nodeState);
     
     return transformedContent;
+  }
+  
+  /**
+   * Check cache for existing transformed content
+   */
+  private checkCacheForContent(
+    cacheKey: string,
+    nodeId: string,
+    content: string,
+    transformations: TextTransformation[]
+  ): string | null {
+    const isVisible = this.visibilityTracker[nodeId]?.isVisible || false;
+    
+    if (this.cache[cacheKey] && 
+        this.cache[cacheKey].content && 
+        this.cache[cacheKey].content.length > content.length) {
+      this.metrics.cacheHits++;
+      
+      if (!isVisible && transformations.length > 0) {
+        this.metrics.lazyTransformationsDeferredCount++;
+      }
+      
+      return this.cache[cacheKey].content;
+    }
+    
+    this.metrics.cacheMisses++;
+    return null;
+  }
+
+  /**
+   * Filter transformations for visibility and performance
+   */
+  private filterTransformationsForVisibility(
+    transformations: TextTransformation[],
+    nodeId: string,
+    maxTransformations: number = 10
+  ): TextTransformation[] {
+    let filteredTransformations = transformations;
+    
+    // Limit transformation count to prevent runaway transformations
+    if (filteredTransformations.length > maxTransformations) {
+      console.warn(`[TransformationService] Too many transformations (${filteredTransformations.length}) for node ${nodeId}, limiting to ${maxTransformations}`);
+      filteredTransformations = filteredTransformations.slice(0, maxTransformations);
+    }
+    
+    const isVisible = this.visibilityTracker[nodeId]?.isVisible || false;
+    
+    // If content isn't visible and transformations are expensive, defer some
+    if (!isVisible && filteredTransformations.length > 3) {
+      filteredTransformations.forEach(t => this.queueLazyTransformation(nodeId, t));
+      
+      // Only apply essential transformations now
+      const essentialTransformations = filteredTransformations.filter(t =>
+        t.type === 'replace' || t.priority === 'high'
+      );
+      
+      if (essentialTransformations.length < filteredTransformations.length) {
+        filteredTransformations = essentialTransformations;
+      }
+    }
+    
+    return filteredTransformations;
+  }
+
+  /**
+   * Cache transformed content with metadata
+   */
+  private cacheTransformedContent(
+    cacheKey: string,
+    transformations: TextTransformation[],
+    content: string,
+    transformedContent: string,
+    readerState: ReaderState,
+    nodeState: NodeState
+  ): void {
+    if (transformedContent === content) return;
+    
+    const transformedSegments = transformations.map(t => ({
+      selector: t.selector || '',
+      transformType: t.type,
+      position: this.findPositionInContent(content, t.selector || '') as [number, number]
+    })).filter(seg => seg.position[0] >= 0);
+    
+    this.cache[cacheKey] = {
+      transformations,
+      timestamp: Date.now(),
+      content: transformedContent,
+      transformedSegments,
+      metadata: {
+        readerStateHash: JSON.stringify({
+          path: readerState.path.sequence.slice(-5),
+          attractors: Object.keys(readerState.path.attractorsEngaged || {})
+        }),
+        nodeStateHash: JSON.stringify({
+          id: nodeState.id,
+          visitCount: nodeState.visitCount
+        }),
+        complexity: this.calculateTransformationComplexity(transformations)
+      }
+    };
   }
   
   /**
@@ -754,6 +736,98 @@ export class TransformationService {
   }
   
   /**
+   * Create transformation(s) for a visitPattern condition
+   */
+  private handleVisitPattern(condition: import('./PathAnalyzer').PatternBasedCondition, nodeState: NodeState): TextTransformation[] {
+    const transformations: TextTransformation[] = [];
+    if (condition.strength > 0.8 && nodeState.currentContent) {
+      const paragraphs = nodeState.currentContent.split('\n\n');
+      if (paragraphs.length > 1) {
+        transformations.push({
+          type: 'replace',
+          selector: paragraphs[1],
+          replacement: `${paragraphs[1]} [A recurring pattern emerges in your exploration]`,
+          priority: 'high'
+        });
+      }
+    }
+    return transformations;
+  }
+
+  /**
+   * Create transformation(s) for a characterFocus condition
+   */
+  private handleCharacterFocus(condition: import('./PathAnalyzer').PatternBasedCondition, nodeState: NodeState): TextTransformation[] {
+    const transformations: TextTransformation[] = [];
+    if (
+      condition.strength > 0.7 &&
+      condition.condition.characters?.[0] === nodeState.character &&
+      nodeState.currentContent
+    ) {
+      const paragraphs = nodeState.currentContent.split('\n\n');
+      if (paragraphs.length > 0) {
+        transformations.push({
+          type: 'emphasize',
+          selector: paragraphs[0],
+          emphasis: 'color',
+          priority: 'medium'
+        });
+      }
+    }
+    return transformations;
+  }
+
+  /**
+   * Create transformation(s) for a temporalFocus condition
+   */
+  private handleTemporalFocus(condition: import('./PathAnalyzer').PatternBasedCondition, nodeState: NodeState): TextTransformation[] {
+    const transformations: TextTransformation[] = [];
+    if (
+      condition.strength > 0.7 &&
+      condition.condition.temporalPosition &&
+      nodeState.currentContent
+    ) {
+      const temporalLayer = nodeState.temporalValue <= 3 ? 'past' : nodeState.temporalValue <= 6 ? 'present' : 'future';
+      if (temporalLayer === condition.condition.temporalPosition) {
+        const paragraphs = nodeState.currentContent.split('\n\n');
+        if (paragraphs.length > 2) {
+          transformations.push({
+            type: 'metaComment',
+            selector: paragraphs[2],
+            replacement: `You seem drawn to ${condition.condition.temporalPosition} narratives`,
+            priority: 'low'
+          });
+        }
+      }
+    }
+    return transformations;
+  }
+
+  /**
+   * Create transformation(s) for attractorAffinity or attractorEngagement condition
+   */
+  private handleAttractorEngagement(condition: import('./PathAnalyzer').PatternBasedCondition, nodeState: NodeState): TextTransformation[] {
+    const transformations: TextTransformation[] = [];
+    if (
+      condition.strength > 0.7 &&
+      condition.condition.strangeAttractorsEngaged?.[0] &&
+      nodeState.currentContent
+    ) {
+      const attractor = condition.condition.strangeAttractorsEngaged[0];
+      const paragraphs = nodeState.currentContent.split('\n\n');
+      if (paragraphs.length > 0 && nodeState.strangeAttractors.includes(attractor)) {
+        transformations.push({
+          type: 'expand',
+          selector: paragraphs[0],
+          replacement: `The concept of ${attractor.replace('-', ' ')} resonates with you.`,
+          priority: 'high'
+        });
+      }
+    }
+    return transformations;
+  }
+
+  /**
    * Create a set of transformations based on reader patterns
    * With caching and optimization
    */
@@ -762,146 +836,57 @@ export class TransformationService {
     nodeState: NodeState
   ): TextTransformation[] {
     this.metrics.patternAnalysisCount++;
-    
-    // Create cache key for pattern-based transformations
     const patternHash = this.calculatePatternHash(readerState);
     const cacheKey = `patterns-${nodeState.id}-${nodeState.visitCount}-${patternHash}`;
-    
-    // Check cache first
     if (this.cache[cacheKey] && this.cache[cacheKey].transformations) {
       this.metrics.cacheHits++;
       return this.cache[cacheKey].transformations;
     }
-    
     this.metrics.cacheMisses++;
-    
-    // Get visibility status for lazy evaluation
     const isNodeVisible = this.visibilityTracker[nodeState.id]?.isVisible || false;
-      // Only perform expensive pattern analysis if the node is visible
-    // or if it's the first time analyzing this node
     if (!isNodeVisible && nodeState.visitCount > 1) {
-      // Return minimal transformations for non-visible content
       const minimalTransformations: TextTransformation[] = [];
-      
-      // Cache this result with a shorter expiry
       this.cache[cacheKey] = {
         transformations: minimalTransformations,
-        timestamp: Date.now() - (this.CACHE_EXPIRY_TIME / 2), // Shorter expiry
+        timestamp: Date.now() - (this.CACHE_EXPIRY_TIME / 2),
         content: ''
       };
-      
       return minimalTransformations;
     }
-
-    // Get patterns from the path analyzer - expensive operation
     const patterns = pathAnalyzer.identifySignificantPatterns(readerState, {
       [nodeState.id]: nodeState
     });
-
-    // Get attractor engagements - another expensive operation
     const attractorEngagements = pathAnalyzer.calculateAttractorEngagement(readerState, {
       [nodeState.id]: nodeState
     });
-
-    // Create transformation conditions from patterns
     const patternConditions = pathAnalyzer.createTransformationConditions(
       patterns,
       attractorEngagements
     );
-
-    // Convert pattern conditions to text transformations (LIMIT TO PREVENT EXCESSIVE TRANSFORMATIONS)
     const transformations: TextTransformation[] = [];
-    const maxPatternTransformations = 2; // Limit pattern transformations
-
-    // Add priority field to transformations for later optimization
-    
+    const maxPatternTransformations = 2;
     patternConditions.slice(0, maxPatternTransformations).forEach(condition => {
-      // We'll create different transformation types based on the pattern type
+      let result: TextTransformation[] = [];
       switch (condition.type) {
         case 'visitPattern':
-          // Repeated sequence patterns could trigger text replacements
-          if (condition.strength > 0.8 && nodeState.currentContent) {
-            // Extract a significant paragraph to transform
-            const paragraphs = nodeState.currentContent.split('\n\n');
-            if (paragraphs.length > 1) {
-              transformations.push({
-                type: 'replace',
-                selector: paragraphs[1],
-                replacement: `${paragraphs[1]} [A recurring pattern emerges in your exploration]`,
-                priority: 'high'
-              });
-            }
-          }
+          result = this.handleVisitPattern(condition, nodeState);
           break;
-          
         case 'characterFocus':
-          // Character focus could trigger emphasis of character-specific content
-          if (condition.strength > 0.7 && 
-              condition.condition.characters?.[0] === nodeState.character &&
-              nodeState.currentContent) {
-            // Find character-specific content to emphasize
-            const paragraphs = nodeState.currentContent.split('\n\n');
-            if (paragraphs.length > 0) {
-              transformations.push({
-                type: 'emphasize',
-                selector: paragraphs[0],
-                emphasis: 'color',
-                priority: 'medium'
-              });
-            }
-          }
+          result = this.handleCharacterFocus(condition, nodeState);
           break;
-          
         case 'temporalFocus':
-          // Temporal focus could trigger meta-commentary
-          if (condition.strength > 0.7 && 
-              condition.condition.temporalPosition && 
-              nodeState.currentContent) {
-            const temporalLayer = nodeState.temporalValue <= 3 ? 'past' : 
-                                 nodeState.temporalValue <= 6 ? 'present' : 'future';
-                                 
-            if (temporalLayer === condition.condition.temporalPosition) {
-              // Find temporal-related content
-              const paragraphs = nodeState.currentContent.split('\n\n');
-              if (paragraphs.length > 2) {
-                transformations.push({
-                  type: 'metaComment',
-                  selector: paragraphs[2],
-                  replacement: `You seem drawn to ${condition.condition.temporalPosition} narratives`,
-                  priority: 'low' // Comments are less essential
-                });
-              }
-            }
-          }
+          result = this.handleTemporalFocus(condition, nodeState);
           break;
-          
         case 'readingRhythm':
-          // Reading rhythm transformations removed (previously time-based)
+          // No-op
           break;
-          
         case 'attractorAffinity':
         case 'attractorEngagement':
-          // Attractor engagement affects content expansion
-          if (condition.strength > 0.7 && 
-              condition.condition.strangeAttractorsEngaged?.[0] &&
-              nodeState.currentContent) {
-            // Find attractor-related content
-            const attractor = condition.condition.strangeAttractorsEngaged[0];
-            const paragraphs = nodeState.currentContent.split('\n\n');
-            
-            if (paragraphs.length > 0 && 
-                nodeState.strangeAttractors.includes(attractor)) {
-              transformations.push({
-                type: 'expand',
-                selector: paragraphs[0],
-                replacement: `The concept of ${attractor.replace('-', ' ')} resonates with you.`,
-                priority: 'high' // Attractor-related content is important
-              });
-            }
-          }
+          result = this.handleAttractorEngagement(condition, nodeState);
           break;
-      }    });
-    
+      }
+      transformations.push(...result);
+    });
     return transformations;
   }
   /**
@@ -1300,6 +1285,77 @@ export class TransformationService {
     if (fromOrder < toOrder) return `${fromLayer}-to-${toLayer}`;
     if (fromOrder > toOrder) return `${fromLayer}-to-${toLayer}`;
     return 'same-layer';
+  }
+
+  /**
+   * Get base priority and source type for a transformation
+   */
+  private getBasePriorityAndSource(transformation: TextTransformation): { priority: number; sourceType: PrioritizedTransformation['sourceType'] } {
+    let priority = 50; // Default mid-level priority
+    let sourceType: PrioritizedTransformation['sourceType'] = 'condition';
+    
+    switch (transformation.type) {
+      case 'replace':
+        priority = 80; // Highest priority since it completely changes content
+        sourceType = 'pattern';
+        break;
+        
+      case 'fragment':
+        priority = 75;
+        sourceType = 'rhythm';
+        break;
+        
+      case 'expand':
+        priority = 60;
+        sourceType = 'attractor';
+        break;
+        
+      case 'emphasize':
+        priority = 50;
+        sourceType = 'temporal';
+        break;
+        
+      case 'metaComment':
+        priority = 40; // Lowest priority since it just adds comments
+        sourceType = 'attractor';
+        break;
+    }
+    
+    return { priority, sourceType };
+  }
+  /**
+   * Adjust priority based on pattern strength
+   */
+  private adjustPriorityForPatterns(
+    item: PrioritizedTransformation,
+    patterns: ReadingPattern[]
+  ): void {
+    if (item.sourceType === 'pattern') {
+      const matchingPattern = patterns.find(p => 
+        p.type === 'sequence' && p.strength > 0.7);
+      if (matchingPattern) {
+        item.priority += Math.round(matchingPattern.strength * 15);
+      }
+    }
+  }
+  /**
+   * Adjust priority based on attractor engagement
+   */
+  private adjustPriorityForAttractors(
+    item: PrioritizedTransformation,
+    attractorEngagements: AttractorEngagement[],
+    nodeState: NodeState
+  ): void {
+    if (item.sourceType === 'attractor' && item.transformation.selector) {
+      const relatedAttractor = attractorEngagements.find(engagement => 
+        nodeState.currentContent?.includes(item.transformation.selector) && 
+        nodeState.strangeAttractors.includes(engagement.attractor)
+      );
+      
+      if (relatedAttractor && relatedAttractor.engagementScore > 50) {
+        item.priority += Math.round((relatedAttractor.engagementScore - 50) / 5);
+      }
+    }
   }
 }
 

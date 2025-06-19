@@ -31,17 +31,18 @@ export class ContentVariantService {
     // Split by both visit-count and section delimiters
     // Visit-count pattern: ---[number]
     // Section pattern: ---section-name---
-    const combinedPattern = /---(\[(\d+)\]|([a-zA-Z0-9\-_]+))---/;
+    const combinedPattern = /---(?:\[(\d+)\]|([a-zA-Z0-9\-_]+))(?:---)?/;
     const parts = rawContent.split(combinedPattern);
 
     // First part is base content (before any delimiter)
     if (parts.length > 0 && !rawContent.startsWith('---')) {
       result.base = parts[0].trim();
     }    // Process the remaining parts
-    for (let i = 1; i < parts.length; i += 4) {
-      const visitCountMatch = parts[i + 1]; // Visit count if it's a [number] pattern
-      const sectionMatch = parts[i + 2]; // Section name if it's a section pattern
-      const content = parts[i + 3]?.trim() || '';
+    for (let i = 1; i < parts.length; i += 3) {
+      const visitCountMatch = parts[i]; // Visit count if it's a [number] pattern
+      const rawSectionMatch = parts[i + 1]; // Section name if it's a section pattern
+      const sectionMatch = rawSectionMatch ? rawSectionMatch.replace(/---$/, '') : undefined;
+      const content = parts[i + 2]?.trim() || '';
 
       if (visitCountMatch) {
         // This is a visit-count variant
@@ -94,6 +95,16 @@ export class ContentVariantService {
     enhancedContent: EnhancedNarramorphContent,
     context: ContentSelectionContext
   ): string {
+    // Debug: Log context and available variants
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[ContentVariantService] selectContentVariant called with:', {
+        context,
+        visitCountVariants: Object.keys(enhancedContent.visitCountVariants),
+        sectionVariants: Object.keys(enhancedContent.sectionVariants),
+        base: enhancedContent.base
+      });
+    }
+
     // Priority order:
     // 1. Section variants based on journey state
     // 2. Visit-count variants
@@ -132,14 +143,27 @@ export class ContentVariantService {
         .map(Number)
         .sort((a, b) => b - a); // Sort descending
 
+      // Always use the highest available variant <= visitCount, otherwise the highest available
       const bestMatch = availableCounts.find(count => context.visitCount >= count);
       if (bestMatch !== undefined) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[ContentVariantService] Returning visitCount variant:', bestMatch);
+        }
         return enhancedContent.visitCountVariants[bestMatch];
       }
+      // Fallback: return the highest available visit count variant
+      const highest = availableCounts[0];
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[ContentVariantService] Fallback to highest visitCount variant:', highest);
+      }
+      return enhancedContent.visitCountVariants[highest];
     }
 
-    // Final fallback to base content
-    return enhancedContent.base;
+    // Final fallback to base content (if empty, fallback to empty string)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[ContentVariantService] Fallback to base content:', enhancedContent.base);
+    }
+    return enhancedContent.base || '';
   }
 
   /**
