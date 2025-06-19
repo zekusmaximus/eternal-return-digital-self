@@ -17,7 +17,7 @@ import { useNodeState } from '../../hooks/useNodeState';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../../store/types';
 import { recoverNodeContent, validateNodeContent } from '../../store/slices/nodesSlice';
-import { isContentCorrupted, sanitizeDisplayContent } from '../../utils/contentSanitizer';
+import { isContentCorrupted, finalTextCleanup } from '../../utils/contentSanitizer';
 import '../../styles/NarramorphTransformations.css';
 import '../../styles/SimpleTextRenderer.css';
 import SimpleTransformationContainer from './SimpleTransformationContainer';
@@ -64,9 +64,8 @@ export default function SimpleTextRenderer({ nodeId, onRenderComplete, onVisibil
             return;
           }
         }
-        
-        const content = transformedContent || baseContent;
-        const finalContent = sanitizeDisplayContent(content);
+          const content = transformedContent || baseContent;
+        const finalContent = finalTextCleanup(content);
         
         setProcessedContent(finalContent);
         dispatch(validateNodeContent(node.id));

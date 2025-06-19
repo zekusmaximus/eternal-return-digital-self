@@ -16,6 +16,7 @@ import { addVisitedNode } from '../../store/slices/readerSlice';
 import './NodeView.css';
 import '../common/ErrorStyles.css'; // Import error and debug styles
 import { RootState } from '../../store';
+import { finalTextCleanup } from '../../utils/contentSanitizer';
 
 // Define interface for the non-standard performance.memory API
 interface MemoryInfo {
@@ -220,8 +221,13 @@ const NodeView = () => {
       dispatch(loadNodeContent(selectedNodeId));
     }
   }, [selectedNodeId, dispatch, viewMode, node?.content]);
-
   const contentLength = node?.currentContent?.length || 0;
+
+  // Create clean content for ReactMarkdown fallbacks
+  const cleanCurrentContent = useMemo(() => {
+    if (!node?.currentContent) return '';
+    return finalTextCleanup(node.currentContent);
+  }, [node?.currentContent]);
 
   const contentCorrupted = useMemo(() => {
     if (!node?.currentContent) return false;
@@ -485,10 +491,9 @@ const NodeView = () => {
             {useNarramorph && !useWebGLFallback ? (
               // Try to use Narramorph, but with error boundary and fallback
               <ErrorBoundary
-                fallback={
-                  <div className="fallback-content" style={{ visibility: 'visible', display: 'block' }}>
+                fallback={                  <div className="fallback-content" style={{ visibility: 'visible', display: 'block' }}>
                     <p className="error-notice">Advanced rendering unavailable - showing basic content</p>
-                    <ReactMarkdown remarkPlugins={[() => remarkGfmPromise]}>{node.currentContent}</ReactMarkdown>
+                    <ReactMarkdown remarkPlugins={[() => remarkGfmPromise]}>{cleanCurrentContent}</ReactMarkdown>
                   </div>
                 }
               >
@@ -531,12 +536,11 @@ const NodeView = () => {
                 <div className="content-loading" style={{ marginBottom: '10px' }}>
                   <div className="loading-spinner"></div>
                   <p>Preparing content...</p>
-                </div>
-                <ReactMarkdown
+                </div>                <ReactMarkdown
                   key={`markdown-${node.id}-${node.visitCount}`}
                   remarkPlugins={[() => remarkGfmPromise]}
                 >
-                  {node.currentContent}
+                  {cleanCurrentContent}
                 </ReactMarkdown>
               </div>
             )}

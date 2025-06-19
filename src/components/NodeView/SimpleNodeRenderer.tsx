@@ -1,10 +1,11 @@
 // src/components/NodeView/SimpleNodeRenderer.tsx
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import SimpleTransformationContainer from './SimpleTransformationContainer';
 import { useNodeState } from '../../hooks/useNodeState';
+import { finalTextCleanup } from '../../utils/contentSanitizer';
 
 interface SimpleNodeRendererProps {
   nodeId: string;
@@ -109,6 +110,12 @@ const SimpleNodeRenderer: React.FC<SimpleNodeRendererProps> = ({ nodeId, onRende
   
   const hasContent = Boolean(node?.currentContent);
   
+  // Clean content with technical markers removed
+  const cleanContent = useMemo(() => {
+    if (!node?.currentContent) return '';
+    return finalTextCleanup(node.currentContent);
+  }, [node?.currentContent]);
+  
   useVisibilityManager(contentRef, nodeId, hasContent, onRenderComplete);
   useReRenderManager(renderCount, setRenderCount);
 
@@ -129,7 +136,7 @@ const SimpleNodeRenderer: React.FC<SimpleNodeRendererProps> = ({ nodeId, onRende
       >
         <StatusIndicator />        <MarkdownContent 
           nodeId={nodeId} 
-          content={node?.currentContent || ''} 
+          content={cleanContent} 
           renderCount={renderCount} 
         />
       </div>

@@ -20,6 +20,7 @@ import { RootState } from '../../store/types';
 import TransformationAnimationContainer from './TransformationAnimationContainer';
 import '../../styles/NarramorphTransformations.css';
 import { transformationService } from '../../services/TransformationService';
+import { finalTextCleanup } from '../../utils/contentSanitizer';
 // Note: Install these packages if needed
 // import { FixedSizeList as List } from 'react-window';
 // import AutoSizer from 'react-virtualized-auto-sizer';
@@ -69,7 +70,18 @@ const NarramorphRenderer: React.FC<NarramorphRendererProps> = memo(({ nodeId, on
   
   // Track which transformations have been animated already
   const [animatedTransformations, setAnimatedTransformations] = useState<string[]>([]);
-  
+    // Memoized clean content with technical markers removed
+  const cleanContent = useMemo(() => {
+    if (!transformedContent) return '';
+    return finalTextCleanup(transformedContent);
+  }, [transformedContent]);
+
+  // Memoized clean fallback content for error cases
+  const cleanFallbackContent = useMemo(() => {
+    if (!node?.currentContent) return 'Content unavailable';
+    return finalTextCleanup(node.currentContent);
+  }, [node?.currentContent]);
+
   // Get reading path from reader state
   const readingPath = useSelector((state: RootState) => state.reader.path);
   
@@ -461,10 +473,9 @@ const NarramorphRenderer: React.FC<NarramorphRendererProps> = memo(({ nodeId, on
   // Show error state if WebGL context was lost
   if (webGLError) {
     console.error('[NarramorphRenderer] Rendering in error state due to WebGL issue');
-    return (
-      <div className="narramorph-error">
+    return (      <div className="narramorph-error">
         <p>Advanced rendering unavailable</p>
-        <div dangerouslySetInnerHTML={{ __html: node?.currentContent || 'Content unavailable' }} />
+        <div dangerouslySetInnerHTML={{ __html: cleanFallbackContent }} />
       </div>
     );
   }
@@ -516,17 +527,16 @@ const NarramorphRenderer: React.FC<NarramorphRendererProps> = memo(({ nodeId, on
           }}
         >
           {/* Show loading indicator before content is ready */}
-          {!transformedContent && (
+          {!cleanContent && (
             <div className="narramorph-loading-indicator" style={{margin: '20px 0'}}>
               <div className="loading-spinner"></div>
               <p>Preparing narrative transformations...</p>
             </div>
           )}
-          
-          {/* Render content directly without virtualization */}
-          {transformedContent && (
+            {/* Render content directly without virtualization */}
+          {cleanContent && (
             <div
-              dangerouslySetInnerHTML={{ __html: transformedContent }}
+              dangerouslySetInnerHTML={{ __html: cleanContent }}
               style={{
                 opacity: isVisible ? 1 : 0.99, // Force visibility while maintaining transitions
                 transition: 'opacity 0.3s ease-in'
