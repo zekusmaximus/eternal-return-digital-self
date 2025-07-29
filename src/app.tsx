@@ -8,7 +8,7 @@ import { PersistGate } from 'redux-persist/integration/react';
 import { store, persistor } from './store';
 import { initializeNodes } from './store/slices/nodesSlice';
 import { selectViewMode } from './store/slices/interfaceSlice';
-import './App.css';
+import './app.css';
 
 // Interface to track view transitions for debugging
 interface ViewTransition {

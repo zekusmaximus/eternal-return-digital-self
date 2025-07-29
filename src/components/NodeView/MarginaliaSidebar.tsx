@@ -3,9 +3,10 @@ import { useDispatch } from 'react-redux';
 import { StrangeAttractor } from '../../types';
 import { engageAttractor, selectVisited } from '../../store/slices/readerSlice';
 import { useAppSelector } from '../../store/hooks';
+import EnhancedAttractorDisplay from '../StrangeAttractor/EnhancedAttractorDisplay';
 import './NodeView.css';
 
-type SidebarMode = 'breadcrumbs' | /* future */ 'echoes' | 'glossary';
+type SidebarMode = 'breadcrumbs' | 'attractors' | /* future */ 'echoes' | 'glossary';
 
 interface MarginaliaSidebarProps {
   nodeId: string;
@@ -112,8 +113,20 @@ const MarginaliaSidebar: React.FC<MarginaliaSidebarProps> = ({
           </>
         )}
 
+        {/* Enhanced Attractors Mode */}
+        {mode === 'attractors' && (
+          <div className="attractors-mode">
+            <h3 className="marginalia-header">Strange Attractors</h3>
+            <EnhancedAttractorDisplay
+              nodeAttractors={strangeAttractors}
+              displayMode="compact"
+              showGlobalState={false}
+            />
+          </div>
+        )}
+
         {/* TODO: other modes */}
-        {mode !== 'breadcrumbs' && (
+        {mode !== 'breadcrumbs' && mode !== 'attractors' && (
           <div className="sidebar-placeholder">
             {/* For now, show attractors + notes as legacy placeholder */}
             <h3 className="marginalia-header">Strange Attractors</h3>
