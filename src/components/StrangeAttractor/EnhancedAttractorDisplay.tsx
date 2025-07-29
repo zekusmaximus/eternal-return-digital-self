@@ -12,7 +12,7 @@ import { useAppDispatch } from '../../store/hooks';
 import { engageAttractor, selectCurrentNodeId } from '../../store/slices/readerSlice';
 import { selectAllNodes } from '../../store/slices/nodesSlice';
 import { enhancedStrangeAttractorSystem, AttractorEvolutionStage } from '../../services/EnhancedStrangeAttractorSystem';
-import { triumvirateSystem } from '../../services/TriumvirateSystem';
+import { consolidatedTriumvirateSystem } from '../../services/ConsolidatedTriumvirateSystem';
 import { StrangeAttractor, NodeState } from '../../types';
 import { ReaderState } from '../../store/slices/readerSlice';
 import './EnhancedAttractorDisplay.css';
@@ -51,14 +51,14 @@ const EnhancedAttractorDisplay: React.FC<EnhancedAttractorDisplayProps> = ({
       nodesRecord[node.id] = node;
     });
 
-    const triumvirate = triumvirateSystem.calculateTriumvirateState(readerState, nodesRecord);
+    const consolidatedState = consolidatedTriumvirateSystem.calculateConsolidatedState(readerState, nodesRecord);
     const attractors = enhancedStrangeAttractorSystem.calculateEnhancedAttractorState(
       readerState,
       nodesRecord,
-      triumvirate
+      consolidatedState
     );
 
-    return { attractorState: attractors, triumvirateState: triumvirate };
+    return { attractorState: attractors, triumvirateState: consolidatedState };
   }, [currentNodeId, allNodes, readerState]);
 
   // Handle attractor engagement

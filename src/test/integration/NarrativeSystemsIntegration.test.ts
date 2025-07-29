@@ -33,9 +33,9 @@ declare global {
   };
 }
 
-import { triumvirateSystem } from '../../services/TriumvirateSystem';
+import { consolidatedTriumvirateSystem } from '../../services/ConsolidatedTriumvirateSystem';
 import { enhancedStrangeAttractorSystem } from '../../services/EnhancedStrangeAttractorSystem';
-import { enhancedEndpointProgressionSystem } from '../../services/EnhancedEndpointProgressionSystem';
+import { simplifiedUnifiedNarrativeSystem } from '../../services/SimplifiedUnifiedNarrativeSystem';
 import { unifiedNarrativeSystem } from '../../services/UnifiedNarrativeSystem';
 import { ReaderState } from '../../store/slices/readerSlice';
 import { NodeState, Character, StrangeAttractor, EndpointOrientation } from '../../types';
@@ -46,9 +46,9 @@ describe('Narrative Systems Integration', () => {
 
   beforeEach(() => {
     // Clear all system caches
-    triumvirateSystem.clearCache();
+    consolidatedTriumvirateSystem.clearCache();
     enhancedStrangeAttractorSystem.clearCache();
-    enhancedEndpointProgressionSystem.clearCache();
+    simplifiedUnifiedNarrativeSystem.clearCache();
     unifiedNarrativeSystem.clearCache();
 
     // Create mock reader state with comprehensive path data
@@ -251,22 +251,24 @@ describe('Narrative Systems Integration', () => {
   });
 
   describe('Individual System Functionality', () => {
-    it('should calculate triumvirate state correctly', () => {
-      const triumvirateState = triumvirateSystem.calculateTriumvirateState(mockReaderState, mockNodes);
+    it('should calculate consolidated triumvirate state correctly', () => {
+      const consolidatedState = consolidatedTriumvirateSystem.calculateConsolidatedState(mockReaderState, mockNodes);
 
-      expect(triumvirateState.isActive).toBe(true);
-      expect(triumvirateState.convergenceLevel).toBeGreaterThan(0);
-      expect(triumvirateState.dominantPerspective).toBe('Archaeologist');
-      expect(triumvirateState.relationships).toBeDefined();
-      expect(Object.keys(triumvirateState.relationships)).toHaveLength(3);
+      expect(consolidatedState.isActive).toBe(true);
+      expect(consolidatedState.convergenceLevel).toBeGreaterThan(0);
+      expect(consolidatedState.dominantPerspective).toBe('Archaeologist');
+      expect(consolidatedState.relationships).toBeDefined();
+      expect(Object.keys(consolidatedState.relationships)).toHaveLength(3);
+      expect(consolidatedState.endpointProgressions).toBeDefined();
+      expect(Object.keys(consolidatedState.endpointProgressions)).toHaveLength(3);
     });
 
     it('should calculate enhanced attractor state correctly', () => {
-      const triumvirateState = triumvirateSystem.calculateTriumvirateState(mockReaderState, mockNodes);
+      const consolidatedState = consolidatedTriumvirateSystem.calculateConsolidatedState(mockReaderState, mockNodes);
       const attractorState = enhancedStrangeAttractorSystem.calculateEnhancedAttractorState(
         mockReaderState,
         mockNodes,
-        triumvirateState
+        consolidatedState
       );
 
       expect(attractorState.globalResonance).toBeGreaterThan(0);
@@ -280,26 +282,15 @@ describe('Narrative Systems Integration', () => {
     });
 
     it('should calculate endpoint progression state correctly', () => {
-      const triumvirateState = triumvirateSystem.calculateTriumvirateState(mockReaderState, mockNodes);
-      const attractorState = enhancedStrangeAttractorSystem.calculateEnhancedAttractorState(
-        mockReaderState,
-        mockNodes,
-        triumvirateState
-      );
-      const endpointState = enhancedEndpointProgressionSystem.calculateEndpointProgressionState(
-        mockReaderState,
-        mockNodes,
-        triumvirateState,
-        attractorState
-      );
+      const consolidatedState = consolidatedTriumvirateSystem.calculateConsolidatedState(mockReaderState, mockNodes);
 
-      expect(endpointState.dominantEndpoint).toBe('past');
-      expect(endpointState.convergenceReadiness).toBeGreaterThan(0);
-      expect(endpointState.narrativeCoherence).toBeGreaterThan(0);
+      expect(consolidatedState.dominantEndpoint).toBe('past');
+      expect(consolidatedState.endpointConvergenceReadiness).toBeGreaterThan(0);
+      expect(consolidatedState.narrativeCoherence).toBeGreaterThan(0);
       
       // Past endpoint should have highest progress due to Archaeologist focus
-      expect(endpointState.progressions.past.currentProgress).toBeGreaterThan(
-        endpointState.progressions.present.currentProgress
+      expect(consolidatedState.endpointProgressions.past.currentProgress).toBeGreaterThan(
+        consolidatedState.endpointProgressions.present.currentProgress
       );
     });
   });

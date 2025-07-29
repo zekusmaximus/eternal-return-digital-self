@@ -12,9 +12,9 @@ import {
   Character
 } from '../types';
 import { ReaderState } from '../store/slices/readerSlice';
-import { triumvirateSystem, TriumvirateState } from './TriumvirateSystem';
+import { consolidatedTriumvirateSystem, ConsolidatedTriumvirateState, EndpointProgression } from './ConsolidatedTriumvirateSystem';
 import { enhancedStrangeAttractorSystem, EnhancedAttractorState } from './EnhancedStrangeAttractorSystem';
-import { enhancedEndpointProgressionSystem, EndpointProgressionState } from './EnhancedEndpointProgressionSystem';
+import { simplifiedUnifiedNarrativeSystem } from './SimplifiedUnifiedNarrativeSystem';
 
 /**
  * Represents a cross-system event that affects multiple narrative systems
@@ -35,9 +35,9 @@ export interface NarrativeEvent {
  */
 export interface UnifiedNarrativeState {
   // Individual system states
-  triumvirate: TriumvirateState;
+  triumvirate: ConsolidatedTriumvirateState;
   attractors: EnhancedAttractorState;
-  endpoints: EndpointProgressionState;
+  endpoints: Record<string, EndpointProgression>;
   
   // Cross-system metrics
   overallCoherence: number; // 0-1: How well systems work together
@@ -147,18 +147,14 @@ export class UnifiedNarrativeSystem {
     readerState: ReaderState,
     nodes: Record<string, NodeState>
   ): UnifiedNarrativeState {
-    // Calculate individual system states
-    const triumvirate = triumvirateSystem.calculateTriumvirateState(readerState, nodes);
+    // Calculate individual system states using consolidated system
+    const triumvirate = consolidatedTriumvirateSystem.calculateConsolidatedState(readerState, nodes);
+    const endpoints = triumvirate.endpointProgressions;
+    
     const attractors = enhancedStrangeAttractorSystem.calculateEnhancedAttractorState(
-      readerState, 
-      nodes, 
-      triumvirate
-    );
-    const endpoints = enhancedEndpointProgressionSystem.calculateEndpointProgressionState(
       readerState,
       nodes,
-      triumvirate,
-      attractors
+      triumvirate
     );
 
     // Calculate cross-system metrics
@@ -204,14 +200,19 @@ export class UnifiedNarrativeSystem {
    * Calculates overall coherence across all systems
    */
   private calculateOverallCoherence(
-    triumvirate: TriumvirateState,
+    triumvirate: ConsolidatedTriumvirateState,
     attractors: EnhancedAttractorState,
-    endpoints: EndpointProgressionState
+    endpoints: Record<string, EndpointProgression>
   ): number {
     // Base coherence from individual systems
     const triumvirateCoherence = triumvirate.convergenceLevel;
     const attractorCoherence = attractors.globalResonance;
-    const endpointCoherence = endpoints.narrativeCoherence;
+    
+    // Calculate endpoint coherence from progression values
+    const endpointProgressions = Object.values(endpoints);
+    const endpointCoherence = endpointProgressions.length > 0
+      ? endpointProgressions.reduce((sum, ep) => sum + ep.currentProgress, 0) / endpointProgressions.length
+      : 0;
 
     // Weight the coherence values
     const weightedCoherence = (
@@ -230,9 +231,9 @@ export class UnifiedNarrativeSystem {
    * Calculates narrative tension across all systems
    */
   private calculateNarrativeTension(
-    triumvirate: TriumvirateState,
+    triumvirate: ConsolidatedTriumvirateState,
     attractors: EnhancedAttractorState,
-    endpoints: EndpointProgressionState
+    endpoints: Record<string, EndpointProgression>
   ): number {
     // Tension from individual systems
     const triumvirateTension = triumvirate.narrativeTension;
@@ -251,9 +252,9 @@ export class UnifiedNarrativeSystem {
    * Calculates emergent complexity from system interactions
    */
   private calculateEmergentComplexity(
-    triumvirate: TriumvirateState,
+    triumvirate: ConsolidatedTriumvirateState,
     attractors: EnhancedAttractorState,
-    endpoints: EndpointProgressionState
+    endpoints: Record<string, EndpointProgression>
   ): number {
     // Count active elements across systems
     const activeRelationships = Object.values(triumvirate.relationships)
@@ -263,14 +264,14 @@ export class UnifiedNarrativeSystem {
     const activeAttractors = Object.values(attractors.revealableAttractors)
       .filter(ra => ra.evolutionStage !== 'dormant').length;
 
-    const activeEndpoints = Object.values(endpoints.progressions)
+    const activeEndpoints = Object.values(endpoints)
       .filter(prog => prog.currentProgress > 0.2).length;
 
     // Cross-system interactions
-    const crossSystemInteractions = 
+    const crossSystemInteractions =
       attractors.activeInfluences.length +
       triumvirate.convergenceMoments.length +
-      endpoints.revelationMoments.length;
+      Object.values(endpoints).reduce((sum, ep) => sum + ep.milestones.filter(m => m.isReached).length, 0);
 
     // Normalize to 0-1 scale
     const totalElements = activeRelationships + activeAttractors + activeEndpoints;
@@ -284,15 +285,23 @@ export class UnifiedNarrativeSystem {
    * Calculates system alignment bonus
    */
   private calculateSystemAlignment(
-    triumvirate: TriumvirateState,
+    triumvirate: ConsolidatedTriumvirateState,
     attractors: EnhancedAttractorState,
-    endpoints: EndpointProgressionState
+    endpoints: Record<string, EndpointProgression>
   ): number {
     let alignment = 0;
 
     // Check if dominant endpoint aligns with dominant character
-    const dominantEndpoint = endpoints.dominantEndpoint;
     const dominantCharacter = triumvirate.dominantPerspective;
+    
+    // Find the endpoint with highest progress
+    const dominantEndpoint = Object.entries(endpoints)
+      .reduce((max, [orientation, progression]) =>
+        progression.currentProgress > max.progress
+          ? { orientation: orientation as EndpointOrientation, progress: progression.currentProgress }
+          : max,
+        { orientation: null as EndpointOrientation | null, progress: 0 }
+      ).orientation;
 
     if (dominantEndpoint && dominantCharacter) {
       const characterEndpointMapping: Record<Character, EndpointOrientation> = {
@@ -320,8 +329,8 @@ export class UnifiedNarrativeSystem {
   /**
    * Calculates endpoint tension
    */
-  private calculateEndpointTension(endpoints: EndpointProgressionState): number {
-    const progressValues = Object.values(endpoints.progressions).map(p => p.currentProgress);
+  private calculateEndpointTension(endpoints: Record<string, EndpointProgression>): number {
+    const progressValues = Object.values(endpoints).map(p => p.currentProgress);
     const maxProgress = Math.max(...progressValues);
     const minProgress = Math.min(...progressValues);
     
@@ -337,7 +346,7 @@ export class UnifiedNarrativeSystem {
    */
   private calculateEndpointAttractorAlignment(
     attractors: EnhancedAttractorState,
-    endpoints: EndpointProgressionState
+    endpoints: Record<string, EndpointProgression>
   ): number {
     // Define attractor-endpoint mappings
     const endpointAttractors: Record<EndpointOrientation, StrangeAttractor[]> = {
@@ -349,7 +358,7 @@ export class UnifiedNarrativeSystem {
     let totalAlignment = 0;
     let alignmentCount = 0;
 
-    Object.entries(endpoints.progressions).forEach(([orientation, progression]) => {
+    Object.entries(endpoints).forEach(([orientation, progression]) => {
       const relevantAttractors = endpointAttractors[orientation as EndpointOrientation];
       const attractorStrength = relevantAttractors.reduce((sum, attractor) => {
         const revealableAttractor = attractors.revealableAttractors[attractor];
@@ -368,7 +377,7 @@ export class UnifiedNarrativeSystem {
    * Calculates triumvirate-attractor alignment
    */
   private calculateTriumvirateAttractorAlignment(
-    triumvirate: TriumvirateState,
+    triumvirate: ConsolidatedTriumvirateState,
     attractors: EnhancedAttractorState
   ): number {
     // Check if character relationships align with attractor influences
@@ -400,9 +409,9 @@ export class UnifiedNarrativeSystem {
    * Detects cross-system events
    */
   private detectCrossSystemEvents(
-    triumvirate: TriumvirateState,
+    triumvirate: ConsolidatedTriumvirateState,
     attractors: EnhancedAttractorState,
-    endpoints: EndpointProgressionState
+    endpoints: Record<string, EndpointProgression>
   ): NarrativeEvent[] {
     const events: NarrativeEvent[] = [];
 
@@ -440,7 +449,7 @@ export class UnifiedNarrativeSystem {
     });
 
     // Detect milestone events
-    Object.values(endpoints.progressions).forEach(progression => {
+    Object.values(endpoints).forEach(progression => {
       progression.milestones.forEach(milestone => {
         if (milestone.isReached && milestone.narrativeSignificance >= this.config.milestoneReachedThreshold) {
           events.push({
@@ -464,9 +473,9 @@ export class UnifiedNarrativeSystem {
    * Generates narrative guidance for the reader
    */
   private generateNarrativeGuidance(
-    triumvirate: TriumvirateState,
+    triumvirate: ConsolidatedTriumvirateState,
     attractors: EnhancedAttractorState,
-    endpoints: EndpointProgressionState,
+    _endpoints: Record<string, EndpointProgression>,
     _readerState: ReaderState,
     nodes: Record<string, NodeState>
   ): NarrativeGuidance[] {
@@ -501,7 +510,7 @@ export class UnifiedNarrativeSystem {
     });
 
     // Guidance from endpoint system
-    const readyEndpoint = enhancedEndpointProgressionSystem.isEndpointReady(endpoints);
+    const readyEndpoint = consolidatedTriumvirateSystem.isEndpointReady(triumvirate);
     if (readyEndpoint) {
       guidance.push({
         type: 'choice',
@@ -523,9 +532,9 @@ export class UnifiedNarrativeSystem {
    * Calculates revelation readiness across systems
    */
   private calculateRevelationReadiness(
-    triumvirate: TriumvirateState,
+    triumvirate: ConsolidatedTriumvirateState,
     attractors: EnhancedAttractorState,
-    endpoints: EndpointProgressionState
+    endpoints: Record<string, EndpointProgression>
   ): Record<string, number> {
     const readiness: Record<string, number> = {};
 
@@ -539,7 +548,7 @@ export class UnifiedNarrativeSystem {
     });
 
     // Endpoint revelations
-    Object.entries(endpoints.progressions).forEach(([orientation, progression]) => {
+    Object.entries(endpoints).forEach(([orientation, progression]) => {
       readiness[`endpoint-${orientation}`] = progression.revelationReadiness;
     });
 
@@ -550,9 +559,9 @@ export class UnifiedNarrativeSystem {
    * Checks system synchronization status
    */
   private checkSystemSynchronization(
-    triumvirate: TriumvirateState,
+    triumvirate: ConsolidatedTriumvirateState,
     attractors: EnhancedAttractorState,
-    endpoints: EndpointProgressionState
+    endpoints: Record<string, EndpointProgression>
   ): Record<string, boolean> {
     const now = Date.now();
     const syncThreshold = 5000; // 5 seconds
@@ -560,14 +569,14 @@ export class UnifiedNarrativeSystem {
     return {
       triumvirate: now - triumvirate.lastUpdate < syncThreshold,
       attractors: now - attractors.lastEvolutionEvent < syncThreshold,
-      endpoints: now - endpoints.lastCalculation < syncThreshold
+      endpoints: Object.values(endpoints).every(ep => now - ep.lastUpdate < syncThreshold)
     };
   }
 
   /**
    * Helper methods for guidance generation
    */
-  private findConvergenceNodes(_triumvirate: TriumvirateState, nodes: Record<string, NodeState>): string[] {
+  private findConvergenceNodes(_triumvirate: ConsolidatedTriumvirateState, nodes: Record<string, NodeState>): string[] {
     // Find nodes that involve multiple characters or high convergence potential
     return Object.values(nodes)
       .filter(node => {
@@ -676,9 +685,9 @@ export class UnifiedNarrativeSystem {
    */
   clearCache(): void {
     this.narrativeCache = null;
-    triumvirateSystem.clearCache();
+    consolidatedTriumvirateSystem.clearCache();
     enhancedStrangeAttractorSystem.clearCache();
-    enhancedEndpointProgressionSystem.clearCache();
+    simplifiedUnifiedNarrativeSystem.clearCache();
   }
 
   /**

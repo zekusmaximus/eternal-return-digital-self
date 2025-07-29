@@ -144,10 +144,9 @@ export class SimplifiedUnifiedNarrativeSystem {
     // Calculate individual system states
     const triumvirate = consolidatedTriumvirateSystem.calculateConsolidatedState(readerState, nodes);
     const attractors = enhancedStrangeAttractorSystem.calculateEnhancedAttractorState(
-      readerState, 
-      nodes, 
-      // Convert ConsolidatedTriumvirateState to TriumvirateState for compatibility
-      this.convertToTriumvirateState(triumvirate)
+      readerState,
+      nodes,
+      triumvirate
     );
 
     // Calculate cross-system metrics
@@ -186,30 +185,6 @@ export class SimplifiedUnifiedNarrativeSystem {
     };
   }
 
-  /**
-   * Convert ConsolidatedTriumvirateState to TriumvirateState for compatibility
-   */
-  private convertToTriumvirateState(consolidated: ConsolidatedTriumvirateState): {
-    isActive: boolean;
-    convergenceLevel: number;
-    narrativeTension: number;
-    dominantPerspective: Character | null;
-    relationships: Record<Character, Record<Character, import('./ConsolidatedTriumvirateSystem').CharacterRelationship>>;
-    revelationThreshold: number;
-    convergenceMoments: import('./ConsolidatedTriumvirateSystem').ConvergenceMoment[];
-    lastUpdate: number;
-  } {
-    return {
-      isActive: consolidated.isActive,
-      convergenceLevel: consolidated.convergenceLevel,
-      narrativeTension: consolidated.narrativeTension,
-      dominantPerspective: consolidated.dominantPerspective,
-      relationships: consolidated.relationships,
-      revelationThreshold: consolidated.revelationThreshold,
-      convergenceMoments: consolidated.convergenceMoments,
-      lastUpdate: consolidated.lastUpdate
-    };
-  }
 
   /**
    * Calculate overall coherence across both systems

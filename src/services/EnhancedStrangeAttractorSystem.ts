@@ -11,7 +11,7 @@ import {
 } from '../types';
 import { ReaderState } from '../store/slices/readerSlice';
 import { strangeAttractorSystem } from './StrangeAttractorSystem';
-import { TriumvirateState } from './TriumvirateSystem';
+import { ConsolidatedTriumvirateState } from './ConsolidatedTriumvirateSystem';
 
 // Import AttractorEngagement interface from PathAnalyzer since it's not exported from StrangeAttractorSystem
 import { AttractorEngagement } from './PathAnalyzer';
@@ -211,7 +211,7 @@ export class EnhancedStrangeAttractorSystem {
   calculateEnhancedAttractorState(
     readerState: ReaderState,
     nodes: Record<string, NodeState>,
-    triumvirateState?: TriumvirateState
+    triumvirateState?: ConsolidatedTriumvirateState
   ): EnhancedAttractorState {
     const now = Date.now();
     
@@ -239,7 +239,7 @@ export class EnhancedStrangeAttractorSystem {
   private calculateEnhancedStateInternal(
     readerState: ReaderState,
     nodes: Record<string, NodeState>,
-    triumvirateState?: TriumvirateState
+    triumvirateState?: ConsolidatedTriumvirateState
   ): EnhancedAttractorState {
     // Get base attractor engagements
     const baseEngagements = strangeAttractorSystem.calculateAttractorEngagement(readerState, nodes);
@@ -271,7 +271,7 @@ export class EnhancedStrangeAttractorSystem {
    */
   private initializeRevealableAttractors(
     engagements: AttractorEngagement[],
-    triumvirateState?: TriumvirateState
+    triumvirateState?: ConsolidatedTriumvirateState
   ): Record<StrangeAttractor, RevealableAttractor> {
     const revealableAttractors: Record<StrangeAttractor, RevealableAttractor> = {} as Record<StrangeAttractor, RevealableAttractor>;
 
@@ -301,7 +301,7 @@ export class EnhancedStrangeAttractorSystem {
   private createRevelationConditions(
     attractor: StrangeAttractor,
     engagement?: AttractorEngagement,
-    triumvirateState?: TriumvirateState
+    triumvirateState?: ConsolidatedTriumvirateState
   ): AttractorRevelationCondition[] {
     const conditions: AttractorRevelationCondition[] = [];
     const config = this.ATTRACTOR_CONFIGS[attractor];
@@ -357,7 +357,7 @@ export class EnhancedStrangeAttractorSystem {
     revealableAttractors: Record<StrangeAttractor, RevealableAttractor>,
     engagements: AttractorEngagement[],
     _readerState: ReaderState,
-    triumvirateState?: TriumvirateState
+    triumvirateState?: ConsolidatedTriumvirateState
   ): void {
     Object.values(revealableAttractors).forEach(revealableAttractor => {
       const engagement = engagements.find(e => e.attractor === revealableAttractor.attractor);
@@ -411,7 +411,7 @@ export class EnhancedStrangeAttractorSystem {
   private calculateResonanceStrength(
     revealableAttractor: RevealableAttractor,
     engagement?: AttractorEngagement,
-    triumvirateState?: TriumvirateState
+    triumvirateState?: ConsolidatedTriumvirateState
   ): number {
     let baseStrength = engagement ? engagement.engagementScore / 100 : 0;
 

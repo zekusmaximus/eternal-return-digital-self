@@ -313,22 +313,11 @@ describe('Consolidated Systems Integration', () => {
     it('should work with consolidated triumvirate state', () => {
       const consolidatedState = consolidatedTriumvirateSystem.calculateConsolidatedState(mockReaderState, mockNodes);
       
-      // Convert to compatible format for attractor system
-      const compatibleTriumvirateState = {
-        isActive: consolidatedState.isActive,
-        convergenceLevel: consolidatedState.convergenceLevel,
-        narrativeTension: consolidatedState.narrativeTension,
-        dominantPerspective: consolidatedState.dominantPerspective,
-        relationships: consolidatedState.relationships,
-        revelationThreshold: consolidatedState.revelationThreshold,
-        convergenceMoments: consolidatedState.convergenceMoments,
-        lastUpdate: consolidatedState.lastUpdate
-      };
-
+      // Use the full consolidated state directly (it already has all required properties)
       const attractorState = enhancedStrangeAttractorSystem.calculateEnhancedAttractorState(
         mockReaderState,
         mockNodes,
-        compatibleTriumvirateState
+        consolidatedState
       );
 
       expect(attractorState.globalResonance).toBeGreaterThan(0);

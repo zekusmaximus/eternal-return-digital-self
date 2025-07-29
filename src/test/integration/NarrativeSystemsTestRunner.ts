@@ -6,9 +6,9 @@
  * and Unified Narrative systems without requiring external test frameworks.
  */
 
-import { triumvirateSystem } from '../../services/TriumvirateSystem';
+import { consolidatedTriumvirateSystem } from '../../services/ConsolidatedTriumvirateSystem';
 import { enhancedStrangeAttractorSystem } from '../../services/EnhancedStrangeAttractorSystem';
-import { enhancedEndpointProgressionSystem } from '../../services/EnhancedEndpointProgressionSystem';
+import { simplifiedUnifiedNarrativeSystem } from '../../services/SimplifiedUnifiedNarrativeSystem';
 import { unifiedNarrativeSystem } from '../../services/UnifiedNarrativeSystem';
 import { ReaderState } from '../../store/slices/readerSlice';
 import { NodeState, Character, StrangeAttractor, EndpointOrientation } from '../../types';
@@ -364,18 +364,20 @@ export class NarrativeSystemsTestRunner {
 
     return this.runTestSuite('Individual System Functionality', [
       {
-        name: 'Triumvirate System Calculation',
+        name: 'Consolidated Triumvirate System Calculation',
         fn: () => {
           // Clear cache to ensure fresh calculation
-          triumvirateSystem.clearCache();
+          consolidatedTriumvirateSystem.clearCache();
           
-          const triumvirateState = triumvirateSystem.calculateTriumvirateState(mockReaderState, mockNodes);
+          const consolidatedState = consolidatedTriumvirateSystem.calculateConsolidatedState(mockReaderState, mockNodes);
 
-          Assertions.assertTrue(triumvirateState.isActive, 'Triumvirate should be active');
-          Assertions.assertGreaterThan(triumvirateState.convergenceLevel, 0, 'Convergence level should be greater than 0');
-          Assertions.assertEqual(triumvirateState.dominantPerspective, 'Archaeologist', 'Dominant perspective should be Archaeologist');
-          Assertions.assertDefined(triumvirateState.relationships, 'Relationships should be defined');
-          Assertions.assertArrayLength(Object.keys(triumvirateState.relationships), 3, 'Should have 3 character relationships');
+          Assertions.assertTrue(consolidatedState.isActive, 'Consolidated triumvirate should be active');
+          Assertions.assertGreaterThan(consolidatedState.convergenceLevel, 0, 'Convergence level should be greater than 0');
+          Assertions.assertEqual(consolidatedState.dominantPerspective, 'Archaeologist', 'Dominant perspective should be Archaeologist');
+          Assertions.assertDefined(consolidatedState.relationships, 'Relationships should be defined');
+          Assertions.assertArrayLength(Object.keys(consolidatedState.relationships), 3, 'Should have 3 character relationships');
+          Assertions.assertDefined(consolidatedState.endpointProgressions, 'Endpoint progressions should be defined');
+          Assertions.assertArrayLength(Object.keys(consolidatedState.endpointProgressions), 3, 'Should have 3 endpoint progressions');
         }
       },
       {
@@ -383,11 +385,11 @@ export class NarrativeSystemsTestRunner {
         fn: () => {
           enhancedStrangeAttractorSystem.clearCache();
           
-          const triumvirateState = triumvirateSystem.calculateTriumvirateState(mockReaderState, mockNodes);
+          const consolidatedState = consolidatedTriumvirateSystem.calculateConsolidatedState(mockReaderState, mockNodes);
           const attractorState = enhancedStrangeAttractorSystem.calculateEnhancedAttractorState(
             mockReaderState,
             mockNodes,
-            triumvirateState
+            consolidatedState
           );
 
           Assertions.assertGreaterThan(attractorState.globalResonance, 0, 'Global resonance should be greater than 0');
@@ -401,31 +403,20 @@ export class NarrativeSystemsTestRunner {
         }
       },
       {
-        name: 'Enhanced Endpoint Progression Calculation',
+        name: 'Consolidated Endpoint Progression Calculation',
         fn: () => {
-          enhancedEndpointProgressionSystem.clearCache();
+          consolidatedTriumvirateSystem.clearCache();
           
-          const triumvirateState = triumvirateSystem.calculateTriumvirateState(mockReaderState, mockNodes);
-          const attractorState = enhancedStrangeAttractorSystem.calculateEnhancedAttractorState(
-            mockReaderState,
-            mockNodes,
-            triumvirateState
-          );
-          const endpointState = enhancedEndpointProgressionSystem.calculateEndpointProgressionState(
-            mockReaderState,
-            mockNodes,
-            triumvirateState,
-            attractorState
-          );
+          const consolidatedState = consolidatedTriumvirateSystem.calculateConsolidatedState(mockReaderState, mockNodes);
 
-          Assertions.assertEqual(endpointState.dominantEndpoint, 'past', 'Dominant endpoint should be past');
-          Assertions.assertGreaterThan(endpointState.convergenceReadiness, 0, 'Convergence readiness should be greater than 0');
-          Assertions.assertGreaterThan(endpointState.narrativeCoherence, 0, 'Narrative coherence should be greater than 0');
+          Assertions.assertEqual(consolidatedState.dominantEndpoint, 'past', 'Dominant endpoint should be past');
+          Assertions.assertGreaterThan(consolidatedState.endpointConvergenceReadiness, 0, 'Convergence readiness should be greater than 0');
+          Assertions.assertGreaterThan(consolidatedState.narrativeCoherence, 0, 'Narrative coherence should be greater than 0');
           
           // Past endpoint should have highest progress due to Archaeologist focus
           Assertions.assertGreaterThan(
-            endpointState.progressions.past.currentProgress,
-            endpointState.progressions.present.currentProgress,
+            consolidatedState.endpointProgressions.past.currentProgress,
+            consolidatedState.endpointProgressions.present.currentProgress,
             'Past endpoint should have higher progress than present'
           );
         }
@@ -693,9 +684,9 @@ export class NarrativeSystemsTestRunner {
     console.log('🚀 Starting Narrative Systems Integration Tests...\n');
 
     // Clear all caches before starting
-    triumvirateSystem.clearCache();
+    consolidatedTriumvirateSystem.clearCache();
     enhancedStrangeAttractorSystem.clearCache();
-    enhancedEndpointProgressionSystem.clearCache();
+    simplifiedUnifiedNarrativeSystem.clearCache();
     unifiedNarrativeSystem.clearCache();
 
     const testSuites = [

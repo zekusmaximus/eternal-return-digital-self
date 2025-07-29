@@ -8,9 +8,9 @@
 
 import { ReaderState } from '../store/slices/readerSlice';
 import { NodeState } from '../types';
-import { triumvirateSystem } from './TriumvirateSystem';
+import { consolidatedTriumvirateSystem } from './ConsolidatedTriumvirateSystem';
 import { enhancedStrangeAttractorSystem } from './EnhancedStrangeAttractorSystem';
-import { enhancedEndpointProgressionSystem } from './EnhancedEndpointProgressionSystem';
+import { simplifiedUnifiedNarrativeSystem } from './SimplifiedUnifiedNarrativeSystem';
 import { unifiedNarrativeSystem, UnifiedNarrativeState } from './UnifiedNarrativeSystem';
 
 /**
@@ -362,9 +362,9 @@ export class PerformanceOptimizationService {
    * Optimization strategy implementations
    */
   private performCacheCleanup(): void {
-    triumvirateSystem.clearCache();
+    consolidatedTriumvirateSystem.clearCache();
     enhancedStrangeAttractorSystem.clearCache();
-    enhancedEndpointProgressionSystem.clearCache();
+    simplifiedUnifiedNarrativeSystem.clearCache();
     unifiedNarrativeSystem.clearCache();
     console.log('[PerformanceOptimization] Cache cleanup completed');
   }
@@ -501,26 +501,20 @@ export class PerformanceOptimizationService {
     // Return a simplified calculation for high-load situations
     // This uses actual system calls but with reduced complexity
     try {
-      const triumvirate = triumvirateSystem.calculateTriumvirateState(readerState, nodes);
+      const consolidatedState = consolidatedTriumvirateSystem.calculateConsolidatedState(readerState, nodes);
       const attractors = enhancedStrangeAttractorSystem.calculateEnhancedAttractorState(
         readerState,
         nodes,
-        triumvirate
-      );
-      const endpoints = enhancedEndpointProgressionSystem.calculateEndpointProgressionState(
-        readerState,
-        nodes,
-        triumvirate,
-        attractors
+        consolidatedState
       );
 
       // Return simplified unified state
       return {
-        triumvirate,
+        triumvirate: consolidatedState,
         attractors,
-        endpoints,
-        overallCoherence: (triumvirate.convergenceLevel + attractors.globalResonance + endpoints.convergenceReadiness) / 3,
-        narrativeTension: triumvirate.narrativeTension,
+        endpoints: consolidatedState.endpointProgressions,
+        overallCoherence: (consolidatedState.convergenceLevel + attractors.globalResonance + consolidatedState.narrativeCoherence) / 3,
+        narrativeTension: consolidatedState.narrativeTension,
         emergentComplexity: attractors.evolutionMomentum,
         suggestedActions: [],
         recentEvents: [],
