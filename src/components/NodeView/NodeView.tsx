@@ -3,7 +3,6 @@
 import { useEffect, useState, lazy, Suspense, useRef, useMemo, useCallback } from 'react';
 import ErrorBoundary from '../common/ErrorBoundary';
 import SimpleTextRenderer from './SimpleTextRenderer';
-import { viewManager } from '../../services/ViewManager';
 import { useSelector } from 'react-redux';
 import {
   selectSelectedNodeId,
@@ -78,8 +77,6 @@ const NodeView = () => {
   const selectedNodeId = useSelector(selectSelectedNodeId);
   const viewMode = useSelector(selectViewMode);
   const node = useSelector((state: RootState) => selectedNodeId ? selectNodeById(state, selectedNodeId) : null);
-
-  const uniqueViewKey = useMemo(() => viewManager.getUniqueViewKey(), []);
 
   const [useNarramorph, setUseNarramorph] = useState(false);
   const [useWebGLFallback, setUseWebGLFallback] = useState(false);
@@ -571,7 +568,6 @@ const NodeView = () => {
   
   return (
     <div 
-      key={uniqueViewKey}
       className={`node-view-container ${characterClass}`}
     >
       <div className={`temporal-indicator ${getTemporalClass()}`}></div>
