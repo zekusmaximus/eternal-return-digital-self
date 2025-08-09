@@ -5,7 +5,7 @@ import { ConnectionsBatched } from './ConnectionsBatched';
 import { InstancedMesh, Color } from 'three';
 import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
-import { useState, useEffect, useMemo, MutableRefObject, useRef } from 'react';
+import { useState, useEffect, MutableRefObject, useRef } from 'react';
 
 // Import node types from store or create interface
 import { ConstellationNode, Connection, NodePositions } from '../../types';
@@ -29,10 +29,6 @@ interface ThreeJSComponentsProps {
   isInitialChoicePhase: boolean;
   triumvirateActive: boolean;
   triumvirateNodes: string[];
-  positionSynchronizer: {
-    updatePositions: (time: number, isMinimap?: boolean) => { [key: string]: [number, number, number] };
-    getCurrentPositions: () => { [key: string]: [number, number, number] };
-  };
   selectedNodeId?: string | null;
   hoveredNodeId?: string | null;
   isMinimap?: boolean;
@@ -132,13 +128,11 @@ const ThreeJSComponents: React.FC<ThreeJSComponentsProps> = ({
   isInitialChoicePhase,
   triumvirateActive,
   triumvirateNodes,
-  positionSynchronizer,
   selectedNodeId,
   hoveredNodeId,
   isMinimap,
 }) => {
-  // Memoize Canvas component to prevent unnecessary recreation
-  return useMemo(() => (
+  return (
     <Canvas
       camera={{ 
         position: [0, 0, 70], // Move camera further back to push constellation away
@@ -214,13 +208,11 @@ const ThreeJSComponents: React.FC<ThreeJSComponentsProps> = ({
         isInitialChoicePhase={isInitialChoicePhase}
         triumvirateActive={triumvirateActive}
         triumvirateNodes={triumvirateNodes}
-        positionSynchronizer={positionSynchronizer}
       />
       <ConnectionsBatched
         // No longer passing ref here since ConnectionsBatched doesn't use it
         connections={mappedConnections}
         nodePositions={nodePositions}
-        positionSynchronizer={positionSynchronizer}
         selectedNodeId={selectedNodeId}
         hoveredNodeId={hoveredNodeId}
         isMinimap={isMinimap}
@@ -250,7 +242,7 @@ const ThreeJSComponents: React.FC<ThreeJSComponentsProps> = ({
         minPolarAngle={0} // Allow full vertical rotation
       />
     </Canvas>
-  ), [nodes, nodePositions, connections, mappedConnections, instancedMeshRef, isInitialChoicePhase, triumvirateActive, triumvirateNodes, onWebGLContextCreated, onWebGLError, positionSynchronizer, selectedNodeId, hoveredNodeId, isMinimap]);
+  );
 };
 
 // Simplified stars component with fixed parameters to reduce render overhead

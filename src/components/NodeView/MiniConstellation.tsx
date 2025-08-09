@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, useEffect, forwardRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import { useNodePositions } from '../../hooks/useNodePositions';
 import { selectConstellationNodes, selectConnections } from '../../store/slices/nodesSlice';
 import { nodeSelected, selectSelectedNodeId } from '../../store/slices/interfaceSlice';
 import { Canvas } from '@react-three/fiber';
@@ -58,44 +59,7 @@ const MiniConstellation = forwardRef<HTMLDivElement, Record<string, never>>((_pr
     dispatch(nodeSelected(nodeId));
   };
 
-  const nodePositions = useMemo(() => {
-    const positions: { [key: string]: [number, number, number] } = {};
-    
-    // Use the same Fibonacci sphere algorithm as the main constellation
-    nodes.forEach((node, index) => {
-      const numNodes = nodes.length;
-      // Use smaller radius for minimap
-      const radius = 3.0;
-      
-      // Fibonacci sphere algorithm (same as ConstellationView)
-      const offset = 2.0 / numNodes;
-      const increment = Math.PI * (3.0 - Math.sqrt(5.0));
-      
-      const y = ((index * offset) - 1) + (offset / 2);
-      const r = Math.sqrt(1 - y * y);
-      const phi = index * increment;
-      
-      const x = Math.cos(phi) * r * radius;
-      const z = Math.sin(phi) * r * radius;
-      
-      positions[node.id] = [x, y * radius, z];
-    });
-    
-    return positions;
-  }, [nodes]);
-
-  // Create position synchronizer for MiniConstellation
-  const positionSynchronizer = useMemo(() => ({
-    updatePositions: (_time: number, isMinimap?: boolean) => {
-      // For minimap, return fixed positions without any movement
-      if (isMinimap) {
-        return nodePositions;
-      }
-      // For main view, this wouldn't be used in MiniConstellation
-      return nodePositions;
-    },
-    getCurrentPositions: () => nodePositions
-  }), [nodePositions]);
+  const nodePositions = useNodePositions(nodes, 3.0);
 
   return (
     <div
@@ -182,14 +146,12 @@ const MiniConstellation = forwardRef<HTMLDivElement, Record<string, never>>((_pr
             isInitialChoicePhase={false}
             triumvirateActive={false}
             triumvirateNodes={[]}
-            positionSynchronizer={positionSynchronizer}
           />
           <ConnectionsBatched
             connections={mappedConnections}
             nodePositions={nodePositions}
             selectedNodeId={selectedNodeId}
             hoveredNodeId={null}
-            positionSynchronizer={positionSynchronizer}
             isMinimap={true}
           />
         </group>

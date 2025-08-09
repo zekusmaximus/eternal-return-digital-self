@@ -1,13 +1,12 @@
 import { useEffect, lazy, Suspense, useState, useRef } from 'react';
 import { useSelector } from 'react-redux';
 import { useAppDispatch } from './store/hooks'; // Ensure './store/hooks' exists or correct the path
-import { viewManager } from './services/ViewManager';
-import { webGLContextManager } from './services/WebGLContextManager';
 import { Provider } from 'react-redux';
 import { PersistGate } from 'redux-persist/integration/react';
 import { store, persistor } from './store';
 import { initializeNodes } from './store/slices/nodesSlice';
 import { selectViewMode } from './store/slices/interfaceSlice';
+import { WebGLContextProvider } from './infrastructure/webgl/WebGLContextProvider';
 import './app.css';
 
 // Interface to track view transitions for debugging
@@ -137,12 +136,9 @@ function AppContent() {
     };
   }, []); // No need for performanceRecords dependency now that we use the ref
   
-  // Track view mode changes using ViewManager
+  // Track view mode changes for debugging
   useEffect(() => {
     if (prevViewModeRef.current !== viewMode) {
-      // Update ViewManager with the new view state
-      viewManager.setActiveView(viewMode as 'constellation' | 'reading');
-      
       // Log the transition
       console.log(`[App] View transition: ${prevViewModeRef.current} -> ${viewMode}`);
       
@@ -173,7 +169,7 @@ function AppContent() {
       // Update previous value
       prevViewModeRef.current = viewMode;
     }
-  }, [viewMode]); // Only re-run when viewMode changes
+  }, [viewMode]);
   
   // Initialize nodes on mount
   useEffect(() => {
@@ -197,40 +193,11 @@ function AppContent() {
       }
     };
     
-    // Custom event handling for centralized WebGLContextManager events
-    const handleWebGLContextLossEvent = (event: CustomEvent) => {
-      const { contextId, type } = event.detail;
-      console.error('[App] WebGL context loss event received from WebGLContextManager', {
-        contextId,
-        type,
-        viewMode: viewMode,
-        timestamp: Date.now()
-      });
-      
-      // Force a check on WebGL availability
-      const webGLSupport = webGLContextManager.checkWebGLSupport();
-      if (webGLSupport.isLowEndDevice) {
-        console.warn('[App] Device seems to be low-end, may need to disable visual effects');
-      }
-    };
-    
     window.addEventListener('error', handleWebGLContextLoss);
-    window.addEventListener('webgl-context-loss', handleWebGLContextLossEvent as EventListener);
-    
-    // Register transition callbacks with ViewManager
-    viewManager.registerTransitionCallbacks({
-      onBeforeTransition: (from, to) => {
-        console.log(`[App] ViewManager transition started: ${from} → ${to}`);
-      },
-      onAfterTransition: (from, to) => {
-        console.log(`[App] ViewManager transition completed: ${from} → ${to}`);
-      }
-    });
     
     // Set up cleanup for application shutdown
     return () => {
       window.removeEventListener('error', handleWebGLContextLoss);
-      window.removeEventListener('webgl-context-loss', handleWebGLContextLossEvent as EventListener);
       
       // The disposeAllContexts call has been removed from here to prevent race conditions.
       // The WebGLContextManager's own beforeunload handler is sufficient for final cleanup.
@@ -249,13 +216,8 @@ function AppContent() {
         <div className="stars3"></div>
       </div>
       
-      {/* Use ViewManager's unique keys to force complete unmount/remount of components */}
       <Suspense fallback={<LoadingView />}>
-        {viewMode === 'constellation' ? (
-          <ConstellationView key={`constellation-${viewManager.getUniqueViewKey()}`} />
-        ) : (
-          <NodeView key={`node-${viewManager.getUniqueViewKey()}`} />
-        )}
+        {viewMode === 'constellation' ? <ConstellationView /> : <NodeView />}
       </Suspense>
       <Suspense fallback={<div></div>}>
         <Onboarding />
@@ -280,7 +242,9 @@ function App() {
   return (
     <Provider store={store}>
       <PersistGate loading={<div>Loading...</div>} persistor={persistor}>
-        <AppContent />
+        <WebGLContextProvider>
+          <AppContent />
+        </WebGLContextProvider>
       </PersistGate>
     </Provider>
   );

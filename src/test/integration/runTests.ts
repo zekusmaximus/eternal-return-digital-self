@@ -6,7 +6,7 @@
  * and Unified Narrative systems.
  */
 
-import { runNarrativeSystemsTests } from './NarrativeSystemsTestRunner';
+import { runNarrativeSystemsTests } from '../../archive/legacy-4-system-architecture/tests/NarrativeSystemsTestRunner';
 
 /**
  * Main execution function

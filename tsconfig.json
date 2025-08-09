@@ -7,7 +7,8 @@
   },
   "include": ["src"],  "exclude": [
     "node_modules",
-    "src/test/**/*.md"
+    "src/test/**/*.md",
+    "src/test/integration/runTests.ts"
   ],
   "references": [
     { "path": "./tsconfig.node.json" }
