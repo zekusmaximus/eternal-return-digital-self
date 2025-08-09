@@ -127,6 +127,10 @@ interface NodesInstancedProps {
  isInitialChoicePhase: boolean;
  triumvirateActive: boolean;
  triumvirateNodes: string[];
+ positionSynchronizer: {
+   updatePositions: (time: number, isMinimap?: boolean) => { [key: string]: [number, number, number] };
+   getCurrentPositions: () => { [key: string]: [number, number, number] };
+  };
 }
 
 // Define base colors for each triad - match exact character names from nodesSlice.ts
@@ -312,6 +316,7 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
     onNodeClick,
     clickableNodeIds,
     isInitialChoicePhase,
+    positionSynchronizer,
     triumvirateActive,
     triumvirateNodes,
   } = props;
@@ -434,29 +439,8 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
     const time = state.clock.elapsedTime;
     frameCount.current += 1;
     
-    const currentPositions: { [key: string]: [number, number, number] } = {};
-    if (!props.isMinimap) {
-      nodes.forEach(node => {
-        const basePos = originalPositions.current[node.id];
-        if (!basePos) return;
-
-        const nx = Math.sin(basePos[0] * 0.1 + time * 0.02) * 0.01;
-        const ny = Math.sin((basePos[1] + 100) * 0.1 + time * 0.02) * 0.01;
-        const nz = Math.sin((basePos[2] + 200) * 0.1 + time * 0.02) * 0.01;
-
-        const maxOffset = 0.01;
-        const xOffset = Math.min(Math.abs(nx), maxOffset) * Math.sign(nx);
-        const yOffset = Math.min(Math.abs(ny), maxOffset) * Math.sign(ny);
-        const zOffset = Math.min(Math.abs(nz), maxOffset) * Math.sign(nz);
-
-        const newPos = [
-          basePos[0] + xOffset,
-          basePos[1] + yOffset,
-          basePos[2] + zOffset
-        ] as [number, number, number];
-        currentPositions[node.id] = newPos;
-      });
-    }
+    // Get synchronized positions from the position synchronizer
+    const currentPositions = positionSynchronizer.updatePositions(time, props.isMinimap);
 
     handleMaterialUpdates(time);
     

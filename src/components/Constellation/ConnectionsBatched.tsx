@@ -11,6 +11,10 @@ interface ConnectionsBatchedProps {
   isMinimap?: boolean;
   triumvirateActive?: boolean;
   triumvirateNodes?: string[];
+  positionSynchronizer?: {
+    updatePositions: (time: number, isMinimap?: boolean) => { [key: string]: [number, number, number] };
+    getCurrentPositions: () => { [key: string]: [number, number, number] };
+  };
 }
 
 // --- Reusable utility objects to prevent reallocation in the render loop ---
@@ -19,6 +23,7 @@ const pulseColor = new THREE.Color();
 
 export const ConnectionsBatched: React.FC<ConnectionsBatchedProps> = (props) => {
     const { connections, nodePositions, selectedNodeId, hoveredNodeId, isMinimap } = props;
+    // Note: positionSynchronizer is available in props but not used yet
 
     const lineSegmentsRef = useRef<THREE.LineSegments>(null!);
     const geometryRef = useRef<THREE.BufferGeometry>(null!);

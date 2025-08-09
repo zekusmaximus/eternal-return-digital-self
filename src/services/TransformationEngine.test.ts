@@ -78,6 +78,7 @@ const mockCurrentNodeState: NodeState = {
   content: null,
   enhancedContent: null,
   currentContent: null,
+  journeyContext: undefined, // Optional property explicitly set
   // EMERGENCY CONTENT RECOVERY FIELDS
   originalContent: null,
   lastTransformedContent: null,

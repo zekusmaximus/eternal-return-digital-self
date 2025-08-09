@@ -21,6 +21,59 @@ const MiniConstellation = forwardRef<HTMLDivElement, Record<string, never>>((_pr
   const [isInteracting, setIsInteracting] = useState(false);
   const canvasId = useMemo(() => `mini-constellation-canvas-${Date.now()}`, []);
 
+  const nodePositions = useNodePositions(nodes, 3.0);
+  
+  // Store original positions for position synchronizer
+  const originalPositions = useRef<{[key: string]: [number, number, number]}>({});
+
+  // Update original positions when nodes or nodePositions change
+  useEffect(() => {
+    nodes.forEach(node => {
+      const position = nodePositions[node.id] || [0, 0, 0];
+      originalPositions.current[node.id] = [...position];
+    });
+  }, [nodes, nodePositions]);
+
+  // Create position synchronizer for the mini constellation
+  const positionSynchronizer = useMemo(() => ({
+    updatePositions: (time: number, isMinimap?: boolean) => {
+      const currentPositions: { [key: string]: [number, number, number] } = {};
+      
+      // For minimap, apply subtle animation to keep nodes synchronized
+      nodes.forEach(node => {
+        const basePos = originalPositions.current[node.id];
+        if (!basePos) {
+          currentPositions[node.id] = nodePositions[node.id] || [0, 0, 0];
+          return;
+        }
+
+        if (isMinimap) {
+          // Subtle movement for minimap
+          const nx = Math.sin(basePos[0] * 0.05 + time * 0.01) * 0.005;
+          const ny = Math.sin((basePos[1] + 100) * 0.05 + time * 0.01) * 0.005;
+          const nz = Math.sin((basePos[2] + 200) * 0.05 + time * 0.01) * 0.005;
+
+          currentPositions[node.id] = [
+            basePos[0] + nx,
+            basePos[1] + ny,
+            basePos[2] + nz
+          ];
+        } else {
+          currentPositions[node.id] = [...basePos];
+        }
+      });
+      
+      return currentPositions;
+    },
+    getCurrentPositions: () => {
+      const currentPositions: { [key: string]: [number, number, number] } = {};
+      nodes.forEach(node => {
+        currentPositions[node.id] = originalPositions.current[node.id] || nodePositions[node.id] || [0, 0, 0];
+      });
+      return currentPositions;
+    }
+  }), [nodes, nodePositions]);
+
   // Clear any existing WebGL contexts when unmounting to prevent conflicts
   useEffect(() => {
     return () => {
@@ -58,8 +111,6 @@ const MiniConstellation = forwardRef<HTMLDivElement, Record<string, never>>((_pr
   const handleNodeClick = (nodeId: string) => {
     dispatch(nodeSelected(nodeId));
   };
-
-  const nodePositions = useNodePositions(nodes, 3.0);
 
   return (
     <div
@@ -146,6 +197,7 @@ const MiniConstellation = forwardRef<HTMLDivElement, Record<string, never>>((_pr
             isInitialChoicePhase={false}
             triumvirateActive={false}
             triumvirateNodes={[]}
+            positionSynchronizer={positionSynchronizer}
           />
           <ConnectionsBatched
             connections={mappedConnections}
@@ -153,6 +205,7 @@ const MiniConstellation = forwardRef<HTMLDivElement, Record<string, never>>((_pr
             selectedNodeId={selectedNodeId}
             hoveredNodeId={null}
             isMinimap={true}
+            positionSynchronizer={positionSynchronizer}
           />
         </group>
       </Canvas>
