@@ -441,7 +441,7 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
     
     // Get synchronized positions from the position synchronizer
     const currentPositions = positionSynchronizer.updatePositions(time, props.isMinimap);
-    
+
     handleMaterialUpdates(time);
     
     // SYNC FIX: Ensure we update positions on the same frames as ConnectionsBatched

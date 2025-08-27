@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, useEffect, forwardRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import { useNodePositions } from '../../hooks/useNodePositions';
 import { selectConstellationNodes, selectConnections } from '../../store/slices/nodesSlice';
 import { nodeSelected, selectSelectedNodeId } from '../../store/slices/interfaceSlice';
 import { Canvas } from '@react-three/fiber';
@@ -19,6 +20,59 @@ const MiniConstellation = forwardRef<HTMLDivElement, Record<string, never>>((_pr
   const instancedMeshRef = useRef<InstancedMesh>(null!);
   const [isInteracting, setIsInteracting] = useState(false);
   const canvasId = useMemo(() => `mini-constellation-canvas-${Date.now()}`, []);
+
+  const nodePositions = useNodePositions(nodes, 3.0);
+  
+  // Store original positions for position synchronizer
+  const originalPositions = useRef<{[key: string]: [number, number, number]}>({});
+
+  // Update original positions when nodes or nodePositions change
+  useEffect(() => {
+    nodes.forEach(node => {
+      const position = nodePositions[node.id] || [0, 0, 0];
+      originalPositions.current[node.id] = [...position];
+    });
+  }, [nodes, nodePositions]);
+
+  // Create position synchronizer for the mini constellation
+  const positionSynchronizer = useMemo(() => ({
+    updatePositions: (time: number, isMinimap?: boolean) => {
+      const currentPositions: { [key: string]: [number, number, number] } = {};
+      
+      // For minimap, apply subtle animation to keep nodes synchronized
+      nodes.forEach(node => {
+        const basePos = originalPositions.current[node.id];
+        if (!basePos) {
+          currentPositions[node.id] = nodePositions[node.id] || [0, 0, 0];
+          return;
+        }
+
+        if (isMinimap) {
+          // Subtle movement for minimap
+          const nx = Math.sin(basePos[0] * 0.05 + time * 0.01) * 0.005;
+          const ny = Math.sin((basePos[1] + 100) * 0.05 + time * 0.01) * 0.005;
+          const nz = Math.sin((basePos[2] + 200) * 0.05 + time * 0.01) * 0.005;
+
+          currentPositions[node.id] = [
+            basePos[0] + nx,
+            basePos[1] + ny,
+            basePos[2] + nz
+          ];
+        } else {
+          currentPositions[node.id] = [...basePos];
+        }
+      });
+      
+      return currentPositions;
+    },
+    getCurrentPositions: () => {
+      const currentPositions: { [key: string]: [number, number, number] } = {};
+      nodes.forEach(node => {
+        currentPositions[node.id] = originalPositions.current[node.id] || nodePositions[node.id] || [0, 0, 0];
+      });
+      return currentPositions;
+    }
+  }), [nodes, nodePositions]);
 
   // Clear any existing WebGL contexts when unmounting to prevent conflicts
   useEffect(() => {
@@ -57,45 +111,6 @@ const MiniConstellation = forwardRef<HTMLDivElement, Record<string, never>>((_pr
   const handleNodeClick = (nodeId: string) => {
     dispatch(nodeSelected(nodeId));
   };
-
-  const nodePositions = useMemo(() => {
-    const positions: { [key: string]: [number, number, number] } = {};
-    
-    // Use the same Fibonacci sphere algorithm as the main constellation
-    nodes.forEach((node, index) => {
-      const numNodes = nodes.length;
-      // Use smaller radius for minimap
-      const radius = 3.0;
-      
-      // Fibonacci sphere algorithm (same as ConstellationView)
-      const offset = 2.0 / numNodes;
-      const increment = Math.PI * (3.0 - Math.sqrt(5.0));
-      
-      const y = ((index * offset) - 1) + (offset / 2);
-      const r = Math.sqrt(1 - y * y);
-      const phi = index * increment;
-      
-      const x = Math.cos(phi) * r * radius;
-      const z = Math.sin(phi) * r * radius;
-      
-      positions[node.id] = [x, y * radius, z];
-    });
-    
-    return positions;
-  }, [nodes]);
-
-  // Create position synchronizer for MiniConstellation
-  const positionSynchronizer = useMemo(() => ({
-    updatePositions: (_time: number, isMinimap?: boolean) => {
-      // For minimap, return fixed positions without any movement
-      if (isMinimap) {
-        return nodePositions;
-      }
-      // For main view, this wouldn't be used in MiniConstellation
-      return nodePositions;
-    },
-    getCurrentPositions: () => nodePositions
-  }), [nodePositions]);
 
   return (
     <div
@@ -189,8 +204,8 @@ const MiniConstellation = forwardRef<HTMLDivElement, Record<string, never>>((_pr
             nodePositions={nodePositions}
             selectedNodeId={selectedNodeId}
             hoveredNodeId={null}
-            positionSynchronizer={positionSynchronizer}
             isMinimap={true}
+            positionSynchronizer={positionSynchronizer}
           />
         </group>
       </Canvas>

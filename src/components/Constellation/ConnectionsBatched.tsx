@@ -8,13 +8,13 @@ interface ConnectionsBatchedProps {
   nodePositions: NodePositions;
   selectedNodeId?: string | null;
   hoveredNodeId?: string | null;
-  positionSynchronizer: {
-    updatePositions: (time: number, isMinimap?: boolean) => { [key: string]: [number, number, number] };
-    getCurrentPositions: () => { [key: string]: [number, number, number] };
-  };
   isMinimap?: boolean;
   triumvirateActive?: boolean;
   triumvirateNodes?: string[];
+  positionSynchronizer?: {
+    updatePositions: (time: number, isMinimap?: boolean) => { [key: string]: [number, number, number] };
+    getCurrentPositions: () => { [key: string]: [number, number, number] };
+  };
 }
 
 // --- Reusable utility objects to prevent reallocation in the render loop ---
@@ -22,7 +22,8 @@ const baseColor = new THREE.Color();
 const pulseColor = new THREE.Color();
 
 export const ConnectionsBatched: React.FC<ConnectionsBatchedProps> = (props) => {
-    const { connections, nodePositions, selectedNodeId, hoveredNodeId, positionSynchronizer, isMinimap } = props;
+    const { connections, nodePositions, selectedNodeId, hoveredNodeId, isMinimap } = props;
+    // Note: positionSynchronizer is available in props but not used yet
 
     const lineSegmentsRef = useRef<THREE.LineSegments>(null!);
     const geometryRef = useRef<THREE.BufferGeometry>(null!);
@@ -52,8 +53,31 @@ export const ConnectionsBatched: React.FC<ConnectionsBatchedProps> = (props) => 
         const positionAttribute = geometryRef.current.attributes.position as THREE.BufferAttribute;
         const colorAttribute = geometryRef.current.attributes.color as THREE.BufferAttribute;
         
-        // Use dynamic positions for the main view, and static for the minimap
-        const currentPositions = isMinimap ? nodePositions : positionSynchronizer.updatePositions(state.clock.elapsedTime);
+        const time = state.clock.elapsedTime;
+        const currentPositions = { ...nodePositions };
+
+        if (!isMinimap) {
+            Object.keys(nodePositions).forEach(nodeId => {
+                const basePos = nodePositions[nodeId];
+                if (!basePos) return;
+
+                const nx = Math.sin(basePos[0] * 0.1 + time * 0.02) * 0.01;
+                const ny = Math.sin((basePos[1] + 100) * 0.1 + time * 0.02) * 0.01;
+                const nz = Math.sin((basePos[2] + 200) * 0.1 + time * 0.02) * 0.01;
+
+                const maxOffset = 0.01;
+                const xOffset = Math.min(Math.abs(nx), maxOffset) * Math.sign(nx);
+                const yOffset = Math.min(Math.abs(ny), maxOffset) * Math.sign(ny);
+                const zOffset = Math.min(Math.abs(nz), maxOffset) * Math.sign(nz);
+
+                const newPos = [
+                  basePos[0] + xOffset,
+                  basePos[1] + yOffset,
+                  basePos[2] + zOffset
+                ] as [number, number, number];
+                currentPositions[nodeId] = newPos;
+            });
+        }
 
         for (let i = 0; i < connections.length; i++) {
             const connection = connections[i];
