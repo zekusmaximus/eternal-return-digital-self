@@ -1,5 +1,5 @@
 import { configureStore } from '@reduxjs/toolkit';
-import rootReducer from '../index';
+import { rootReducer } from '../index';
 import {
   visitNode,
   applyTransformation,

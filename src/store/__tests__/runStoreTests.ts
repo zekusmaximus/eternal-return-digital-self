@@ -1,56 +1,8 @@
 /**
  * Test runner for store slice tests
- * This file provides a way to run all store slice tests in sequence
+ * This file provides a way to list/trigger store slice tests in sequence
+ * without bundling a custom runner (we rely on Jest for real execution).
  */
-
-// Simple test result interface
-interface TestResult {
-  name: string;
-  passed: boolean;
-  error?: string;
-}
-
-// Test suite results
-interface TestSuiteResult {
-  suiteName: string;
-  results: TestResult[];
-  passed: number;
-  failed: number;
-  total: number;
-}
-
-/**
- * Run a single test
- */
-function runTest(name: string, testFn: () => void): TestResult {
-  try {
-    testFn();
-    return { name, passed: true };
-  } catch (error) {
-    return { 
-      name, 
-      passed: false, 
-      error: error instanceof Error ? error.message : String(error) 
-    };
-  }
-}
-
-/**
- * Run a test suite
- */
-function runTestSuite(suiteName: string, tests: Array<{ name: string; fn: () => void }>): TestSuiteResult {
-  const results = tests.map(test => runTest(test.name, test.fn));
-  const passed = results.filter(r => r.passed).length;
-  const failed = results.filter(r => !r.passed).length;
-  
-  return {
-    suiteName,
-    results,
-    passed,
-    failed,
-    total: results.length,
-  };
-}
 
 /**
  * Run all store slice tests

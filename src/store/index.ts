@@ -33,7 +33,7 @@ const persistConfig = {
 };
 
 // Combine reducers from different slices
-const rootReducer = combineReducers({
+export const rootReducer = combineReducers({
   nodes: nodesReducer,
   reader: readerReducer,
   interface: interfaceReducer,

@@ -6,19 +6,26 @@
 import { ContentApplicationService } from '../../application/services/ContentApplicationService';
 import { NavigateToNodeUseCase } from '../../application/usecases/NavigateToNodeUseCase';
 import { GetContentUseCase } from '../../application/usecases/GetContentUseCase';
+import type { SimplifiedAppDispatch, SimplifiedRootState } from '../../infrastructure/state/store';
+import type { TransformationContext } from '../../domain/models/TransformationContext';
 
 // Mock dispatch and getState functions
-const createMockDispatch = () => {
+type MockDispatch = SimplifiedAppDispatch & { actions: unknown[] };
+const createMockDispatch = (): MockDispatch => {
   const actions: unknown[] = [];
-  const dispatch = (action: unknown) => {
+  const dispatchImpl = (action: unknown) => {
     actions.push(action);
-    return Promise.resolve(action);
+    // Return a minimal unwrap-compatible object like RTK thunks
+    return {
+      unwrap: async () => action,
+    };
   };
+  const dispatch = dispatchImpl as unknown as MockDispatch;
   dispatch.actions = actions;
-  return dispatch as unknown as any;
+  return dispatch;
 };
 
-const createMockGetState = () => {
+const createMockGetState = (): (() => SimplifiedRootState) => {
   return () => ({
     transformation: {
       contexts: {},
@@ -166,8 +173,9 @@ export async function validateContentApplicationService(): Promise<TestSuiteResu
         const getState = createMockGetState();
         const service = new ContentApplicationService(dispatch, getState);
         
-        // Access private method through any cast for testing
-        const context = (service as unknown as any).buildTransformationContext('test-node');
+        // Access private method through a narrowed test-only shape
+        const context = (service as unknown as { buildTransformationContext: (nodeId: string) => TransformationContext })
+          .buildTransformationContext('test-node');
         assert.defined(context);
         assert.equals(context.nodeId, 'test-node');
       }
