@@ -133,6 +133,24 @@ interface NodesInstancedProps {
   };
 }
 
+// Map visitCount -> tiered visual response
+const visitTier = (n: number) => (n >= 5 ? 5 : n >= 3 ? 3 : n >= 2 ? 2 : n >= 1 ? 1 : 0);
+
+const heatScaleFor = (n: number, isMinimap?: boolean) => {
+  const tier = visitTier(n);
+  const bump = isMinimap ? 0.015 : 0.03;
+  return 1 + tier * bump; // subtle: up to ~1.12
+};
+
+const ringOpacityFor = (n: number) => {
+  const tier = visitTier(n);
+  return Math.min(0.65, 0.18 + tier * 0.12);
+};
+
+// Adjusted to match this repo's sphere radius (1.0)
+const ringRadiusFor = (isMinimap?: boolean) => (isMinimap ? 0.65 : 1.3);
+const ringTubeFor = (isMinimap?: boolean) => (isMinimap ? 0.03 : 0.06);
+
 // Define base colors for each triad - match exact character names from nodesSlice.ts
 const triadColors = {
   LastHuman: new Color('#ff6666'), // Reddish
@@ -241,16 +259,17 @@ const updateNodeScaling = (
   nodeMesh: THREE.Mesh,
   isPulsingNode: boolean,
   time: number,
-  isMinimap?: boolean
+  isMinimap: boolean | undefined,
+  heatScale: number
 ): void => {
   if (isPulsingNode) {
     const pulseSpeed = 3;
     const pulseAmount = 0.15;
     const baseScale = 1.0;
-    const targetScale = baseScale + Math.sin(time * pulseSpeed) * pulseAmount;
+    const targetScale = (baseScale + Math.sin(time * pulseSpeed) * pulseAmount) * heatScale;
     nodeMesh.scale.set(targetScale, targetScale, targetScale);
   } else {
-    const baseScale = isMinimap ? 0.5 : 1.0;
+    const baseScale = (isMinimap ? 0.5 : 1.0) * heatScale;
     if (nodeMesh.scale.x !== baseScale || nodeMesh.scale.y !== baseScale || nodeMesh.scale.z !== baseScale) {
       nodeMesh.scale.set(baseScale, baseScale, baseScale);
     }
@@ -326,6 +345,8 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
   const hoveredNodeId = useSelector(selectHoveredNodeId);
   const reduxSelectedNodeId = useSelector(selectSelectedNodeId);
   const selectedNodeId = overrideSelectedNodeId ?? reduxSelectedNodeId;
+  // Read revisit counts once per render
+  const revisitPatterns = useSelector((s: any) => s.reader?.path?.revisitPatterns ?? {});
 
   const triumvirateNodeSet = useMemo(() => new Set(triumvirateNodes), [triumvirateNodes]);
   const triumvirateColorMap = useMemo(() => ({
@@ -353,6 +374,7 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
   const forceFieldMeshRefs = useRef<THREE.Object3D[]>([]);
   const labelTextRefs = useRef<THREE.Object3D[]>([]);
   const triumvirateTextRefs = useRef<THREE.Object3D[]>([]);
+  const ringMeshRefs = useRef<THREE.Mesh[]>([]);
   
   // Store original positions for the noise animation
   const originalPositions = useRef<{[key: string]: [number, number, number]}>({});
@@ -413,7 +435,10 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
                          !props.isMinimap && 
                          isDesignatedStartingNode(node);
 
-      updateNodeScaling(nodeMesh, shouldPulse, time, props.isMinimap);
+      // Apply heat-based scale multiplier
+      const visitCount = revisitPatterns[node.id] ?? 0;
+      const heatScale = heatScaleFor(visitCount, props.isMinimap);
+      updateNodeScaling(nodeMesh, shouldPulse, time, props.isMinimap, heatScale);
       
       const isImportantNode = node.id === selectedNodeId ||
                              node.id === hoveredNodeId ||
@@ -443,6 +468,20 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
     const currentPositions = positionSynchronizer.updatePositions(time, props.isMinimap);
 
     handleMaterialUpdates(time);
+
+    // Subtle ring opacity flutter for visited nodes
+    for (let i = 0; i < nodes.length; i++) {
+      const vc = revisitPatterns[nodes[i].id] ?? 0;
+      if (vc > 0) {
+        const ring = ringMeshRefs.current[i];
+        if (ring && (ring.material as any)) {
+          const base = ringOpacityFor(vc);
+          const add = Math.sin(time * 1.2) * 0.02;
+          const mat = ring.material as THREE.MeshBasicMaterial;
+          mat.opacity = Math.max(0, base + add);
+        }
+      }
+    }
     
     // SYNC FIX: Ensure we update positions on the same frames as ConnectionsBatched
     // This is critical for keeping nodes and connections aligned
@@ -495,7 +534,12 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
           triumvirateActive,
           triumvirateNodeSet,
           triumvirateColorMap
-        );// The main node group's position is determined by synchronized positions,
+        );
+
+        // Derive visit count for visual encodings
+        const visitCount = revisitPatterns[node.id] ?? 0;
+
+        // The main node group's position is determined by synchronized positions,
         // and individual elements within this group (like the sphere and text) will be positioned relatively.
         const groupPosition = groupPositions[node.id] || originalPositions.current[node.id] || [0, 0, 0];
         
@@ -644,6 +688,27 @@ export const NodesInstanced = forwardRef<InstancedMesh, NodesInstancedProps>((pr
                   time: { value: 0 }
                 }}
                 transparent={true}
+                depthWrite={false}
+              />
+            </mesh>
+
+            {/* Revisit ring (halo) */}
+            <mesh
+              ref={(mesh) => {
+                if (mesh) {
+                  ringMeshRefs.current[index] = mesh as THREE.Mesh;
+                }
+              }}
+              position={[0, 0, 0]}
+              rotation={[Math.PI / 2, 0, 0]}
+              visible={visitCount > 0}
+            >
+              <torusGeometry args={[ringRadiusFor(props.isMinimap), ringTubeFor(props.isMinimap), 8, 64]} />
+              <meshBasicMaterial
+                color={nodeColor.clone().multiplyScalar(1.2)}
+                transparent
+                opacity={ringOpacityFor(visitCount)}
+                blending={THREE.AdditiveBlending}
                 depthWrite={false}
               />
             </mesh>
