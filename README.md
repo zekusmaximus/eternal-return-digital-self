@@ -1,5 +1,17 @@
 # Eternal Return of the Digital Self
 
+> [!IMPORTANT]
+> **Feature freeze:** This repository is the older visual/onboarding prototype for
+> the [Narramorph product consolidation](https://github.com/zekusmaximus/Narramorph/blob/main/docs/eternal-return-product-consolidation-roadmap.md).
+> Do not add product features here. Only security, provenance, extraction-support,
+> and archival-preparation changes are accepted. Selected onboarding, visual, and
+> measured 3D ideas are being evaluated for clean reimplementation in Narramorph.
+> This repository becomes read-only after the Phase 6 archive gate.
+
+The reviewed pre-consolidation state is preserved by tag
+`pre-consolidation-2026-07-13`. See [the baseline record](CONSOLIDATION_BASELINE.md)
+and [provenance record](PROVENANCE.md).
+
 ## Narramorph Fiction: A New Interactive Literary Experience
 
 "Eternal Return of the Digital Self" introduces the "Narramorph Fiction" genre - a web-based interactive literary experience where narrative is non-linear, presented through interconnected "nodes." The story explores digital identity, consciousness, and time through three character perspectives across Past, Present, and Future layers.
@@ -134,7 +146,10 @@ This project is currently in early development. For contribution guidelines, ple
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+- Software source code is available under the [MIT License](LICENSE).
+- Narrative prose, expressive story data, character/world material, generated literary content, and first-party media are **all rights reserved** under the [content license](CONTENT_LICENSE.md).
+
+The MIT License does not grant permission to republish or create a separate derivative work from the reserved content.
 
 ## Acknowledgments
 
