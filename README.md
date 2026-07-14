@@ -146,7 +146,10 @@ This project is currently in early development. For contribution guidelines, ple
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+- Software source code is available under the [MIT License](LICENSE).
+- Narrative prose, expressive story data, character/world material, generated literary content, and first-party media are **all rights reserved** under the [content license](CONTENT_LICENSE.md).
+
+The MIT License does not grant permission to republish or create a separate derivative work from the reserved content.
 
 ## Acknowledgments
 

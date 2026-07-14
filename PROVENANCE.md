@@ -2,7 +2,7 @@
 
 The immutable reference state is tag `pre-consolidation-2026-07-13`.
 
-Narramorph may study or reimplement the following concepts subject to the approved software/content licenses and direct-copy attribution requirements:
+Software in this repository is MIT-licensed under `LICENSE`; narrative and media content is reserved under `CONTENT_LICENSE.md`. Narramorph may study or reimplement the following concepts subject to direct-copy attribution requirements:
 
 - first-run introduction and animated node demonstration;
 - replayable Help and contextual interaction guidance;
